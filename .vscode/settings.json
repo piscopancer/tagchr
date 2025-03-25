@@ -1,0 +1,7 @@
+{
+  "background.fullscreen": {
+    "images": ["file:///C:/misc/bgs/neforka-0.jpg"],
+    "opacity": 0.1,
+    "position": "0 10%"
+  }
+}
