@@ -20,6 +20,8 @@ pub enum EditorSectionSelectable {
   TitleInput,
   ArtistInput,
   YearInput,
+  Genre,
+  Lyrics,
 }
 
 #[derive(PartialEq, Debug)]
@@ -32,10 +34,11 @@ pub enum HomeScreenSection {
 pub struct HomeScreen {
   selected_section: HomeScreenSection,
   search_input: TextArea<'static>,
+  files_table: Table<'static>,
   title_input: TextArea<'static>,
   artist_input: TextArea<'static>,
   year_input: TextArea<'static>,
-  files_table: Table<'static>,
+  genre_input: TextArea<'static>,
 }
 
 pub const TABLE_BLOCK: Block<'static> = Block::bordered().border_type(BorderType::Rounded);
@@ -48,6 +51,7 @@ impl HomeScreen {
       title_input: basic_text_area("Title".into()),
       artist_input: basic_text_area("Artist".into()),
       year_input: basic_text_area("Year".into()),
+      genre_input: basic_text_area("Genre".into()),
       files_table: Table::default()
         .column_spacing(1)
         .widths([Constraint::Fill(1), Constraint::Fill(1), Constraint::Fill(1)])
@@ -66,7 +70,15 @@ impl Screen for HomeScreen {
       Constraint::Fill(1),
     ]);
     let [debug_area, path_input_area, list_area] = vert_l.areas(sidebar_area);
-    let [song_name_input_area, song_artist_input_area, song_year_input_area] = Layout::vertical([
+    let [
+      title_input_area,
+      artist_input_area,
+      year_input_area,
+      genre_input_area,
+      lyrics_button_area,
+    ] = Layout::vertical([
+      Constraint::Length(3),
+      Constraint::Length(3),
       Constraint::Length(3),
       Constraint::Length(3),
       Constraint::Length(3),
@@ -114,12 +126,20 @@ impl Screen for HomeScreen {
       HomeScreenSection::Editor(_, EditorSectionSelectable::YearInput) => true,
       _ => false,
     });
+    self.genre_input.highlight_border(match self.selected_section {
+      HomeScreenSection::Editor(_, EditorSectionSelectable::Genre) => true,
+      _ => false,
+    });
+    self.genre_input.highlight_border(match self.selected_section {
+      HomeScreenSection::Editor(_, EditorSectionSelectable::Lyrics) => true,
+      _ => false,
+    });
 
     frame.render_widget(&self.search_input, path_input_area);
     frame.render_widget(&self.files_table, list_area);
-    frame.render_widget(&self.title_input, song_name_input_area);
-    frame.render_widget(&self.artist_input, song_artist_input_area);
-    frame.render_widget(&self.year_input, song_year_input_area);
+    frame.render_widget(&self.title_input, title_input_area);
+    frame.render_widget(&self.artist_input, artist_input_area);
+    frame.render_widget(&self.year_input, year_input_area);
     // deubug
     let debug_p = Paragraph::new(
       vec![Line::from(format!("sec [{:?}] ", self.selected_section))]
@@ -154,6 +174,18 @@ impl Screen for HomeScreen {
                   EditorSectionSelectable::ArtistInput
                 );
               }
+              EditorSectionSelectable::Genre => {
+                self.selected_section = HomeScreenSection::Editor(
+                  *i,
+                  EditorSectionSelectable::YearInput
+                );
+              }
+              EditorSectionSelectable::Lyrics => {
+                self.selected_section = HomeScreenSection::Editor(
+                  *i,
+                  EditorSectionSelectable::Genre
+                );
+              }
             }
           }
           _ => {}
@@ -170,6 +202,12 @@ impl Screen for HomeScreen {
             };
             self.title_input.set_text(
               app.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
+            );
+            self.artist_input.set_text(
+              app.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
+            );
+            self.year_input.set_text(
+              app.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
             );
           }
           _ => {}
@@ -197,6 +235,12 @@ impl Screen for HomeScreen {
             self.title_input.set_text(
               app.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
             );
+            self.artist_input.set_text(
+              app.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
+            );
+            self.year_input.set_text(
+              app.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
+            );
           }
           HomeScreenSection::Editor(i, editor_selection) => {
             match editor_selection {
@@ -213,6 +257,18 @@ impl Screen for HomeScreen {
                 );
               }
               EditorSectionSelectable::YearInput => {
+                self.selected_section = HomeScreenSection::Editor(
+                  *i,
+                  EditorSectionSelectable::TitleInput
+                );
+              }
+              EditorSectionSelectable::Genre => {
+                self.selected_section = HomeScreenSection::Editor(
+                  *i,
+                  EditorSectionSelectable::Lyrics
+                );
+              }
+              EditorSectionSelectable::Lyrics => {
                 self.selected_section = HomeScreenSection::Editor(
                   *i,
                   EditorSectionSelectable::TitleInput
@@ -235,14 +291,20 @@ impl Screen for HomeScreen {
             self.title_input.set_text(
               app.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
             );
+            self.artist_input.set_text(
+              app.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
+            );
+            self.year_input.set_text(
+              app.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
+            );
           }
           _ => {}
         }
       }
       (KeyCode::Left, KeyModifiers::CONTROL) => {
         match &self.selected_section {
-          HomeScreenSection::Editor(..) => {
-            self.selected_section = HomeScreenSection::Path;
+          HomeScreenSection::Editor(i, _) => {
+            self.selected_section = HomeScreenSection::Table(*i);
           }
           _ => {}
         }
@@ -305,6 +367,18 @@ impl Screen for HomeScreen {
                   }
                 }
               }
+              EditorSectionSelectable::Genre => {
+                if self.genre_input.input(key_event) {
+                  if let Some(song) = &mut app.selected_song {
+                    song.genre.edit(self.genre_input.first_line_text());
+                    self.genre_input.highlight_text(match song.genre.state {
+                      TagState::Changed(_) => true,
+                      _ => false,
+                    });
+                  }
+                }
+              }
+              _ => {}
             }
           }
           _ => {}

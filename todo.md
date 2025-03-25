@@ -1,7 +1,10 @@
 # todo
 
-- use modules to encapsule movement between sections. will be useful for side-effects (when ctrl-down into table should also put text into inputs)
+- use modules to encapsulate movement between sections. will be useful for side-effects (when ctrl-down into table should also put text into inputs, cannot change sections just by modifying app state bcs it's not enough)
 - if input text was highlighted (meaning changed happened), selecting another song does not reset it
+- search bar not working
+- use hashmap to store screens by enum and generic trait (for unwrapping during compilation)
+
 <!-- -->
 
 <!--

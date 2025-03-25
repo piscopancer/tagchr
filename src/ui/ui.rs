@@ -5,17 +5,19 @@ use ratatui::{ style::{ Style, Stylize }, widgets::{ Block, BorderType, List, Ta
 use tui_textarea::TextArea;
 use crate::app::app::App;
 
-use super::home::screen::HomeScreen;
+use super::{ home::screen::HomeScreen, lyrics::screen::LyricsScreen };
 
 mod enums {
   pub enum Screen {
     Home,
+    Lyrics,
   }
 }
 
 pub struct Ui {
   screen: enums::Screen,
   home_screen: HomeScreen,
+  lyrics_screen: LyricsScreen,
 }
 
 impl Ui {
@@ -23,6 +25,7 @@ impl Ui {
     Self {
       screen: enums::Screen::Home,
       home_screen: HomeScreen::new(),
+      lyrics_screen: LyricsScreen::new(),
     }
   }
   pub fn draw(&mut self, frame: &mut Frame, app: &App) {
@@ -30,7 +33,13 @@ impl Ui {
       enums::Screen::Home => {
         self.home_screen.draw(frame, app);
       }
+      enums::Screen::Lyrics => {
+        self.home_screen.draw(frame, app);
+      }
     }
+  }
+  pub fn change_screen(&mut self, screen: enums::Screen) {
+    self.screen = screen;
   }
   pub fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) {
     match (key_event.code, key_event.modifiers) {
@@ -41,6 +50,9 @@ impl Ui {
         match self.screen {
           enums::Screen::Home => {
             self.home_screen.handle_key_event(key_event, app);
+          }
+          enums::Screen::Lyrics => {
+            self.lyrics_screen.handle_key_event(key_event, app);
           }
         }
       }

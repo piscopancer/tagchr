@@ -49,6 +49,7 @@ pub struct SongTags {
   pub name: EditableTag,
   pub artist: EditableTag,
   pub year: EditableTag,
+  pub genre: EditableTag,
 }
 
 impl SongTags {
@@ -58,6 +59,7 @@ impl SongTags {
       name: EditableTag::new(tag.title().map(|n| n.into())),
       artist: EditableTag::new(tag.artist().map(|a| a.into())),
       year: EditableTag::new(tag.year().map(|y| y.to_string())),
+      genre: EditableTag::new(tag.genre().map(|g| g.to_string())),
     }
   }
 }
