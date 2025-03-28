@@ -1,8 +1,11 @@
-use std::{ fs, path::{ Path, PathBuf }, time::SystemTime };
+use std::{ fs, io::Stdout, path::{ Path, PathBuf }, time::{ Duration, SystemTime } };
 use chrono::{ DateTime, Local, Utc };
+use crossterm::event::{ self, poll, Event, KeyEventKind };
 use humantime::format_duration;
-use id3::{ Tag, TagLike };
+use id3::{ frame::Lyrics, Tag, TagLike };
 use pretty_date::pretty_date_formatter::PrettyDateFormatter;
+use ratatui::{ prelude::{ Backend, CrosstermBackend }, Terminal };
+use crate::ui::ui::Ui;
 
 #[derive(Debug)]
 pub struct Mp3File {
@@ -12,24 +15,31 @@ pub struct Mp3File {
 }
 
 #[derive(Clone, Default)]
-pub enum TagState {
+pub enum TagState<T> {
   #[default]
   Unchanged,
-  Changed(String),
+  Changed(T),
   Removed,
 }
 
 #[derive(Clone)]
-pub struct EditableTag {
-  pub original: Option<String>,
-  pub state: TagState,
+pub struct EditableTag<T> {
+  pub original: Option<T>,
+  pub state: TagState<T>,
 }
 
-impl EditableTag {
-  pub fn new(original: Option<String>) -> Self {
+pub trait EditableTagTrait<T> {
+  fn edit(&mut self, new: T);
+}
+
+impl<T> EditableTag<T> {
+  pub fn new(original: Option<T>) -> Self {
     Self { original, state: TagState::default() }
   }
-  pub fn edit(&mut self, new: String) {
+}
+
+impl EditableTagTrait<String> for EditableTag<String> {
+  fn edit(&mut self, new: String) {
     self.state = if let Some(original) = &self.original {
       if *original == new {
         TagState::Unchanged
@@ -44,12 +54,37 @@ impl EditableTag {
   }
 }
 
+impl EditableTagTrait<Lyrics> for EditableTag<Lyrics> {
+  fn edit(&mut self, new: Lyrics) {
+    self.state = if let Some(original) = &self.original {
+      if
+        original.description == new.description ||
+        original.lang == new.lang ||
+        original.text == new.text
+      {
+        TagState::Unchanged
+      } else if
+        new.description.chars().count() == 0 ||
+        new.lang.chars().count() == 0 ||
+        new.text.chars().count() == 0
+      {
+        TagState::Removed
+      } else {
+        TagState::Changed(new)
+      }
+    } else {
+      TagState::Changed(new)
+    };
+  }
+}
+
 #[derive(Clone)]
 pub struct SongTags {
-  pub name: EditableTag,
-  pub artist: EditableTag,
-  pub year: EditableTag,
-  pub genre: EditableTag,
+  pub name: EditableTag<String>,
+  pub artist: EditableTag<String>,
+  pub year: EditableTag<String>,
+  pub genre: EditableTag<String>,
+  pub lyrics: EditableTag<Lyrics>,
 }
 
 impl SongTags {
@@ -60,29 +95,22 @@ impl SongTags {
       artist: EditableTag::new(tag.artist().map(|a| a.into())),
       year: EditableTag::new(tag.year().map(|y| y.to_string())),
       genre: EditableTag::new(tag.genre().map(|g| g.to_string())),
+      lyrics: EditableTag::new({
+        let l = tag.lyrics().next().cloned();
+        l
+      }),
     }
   }
 }
 
-pub struct App {
+pub struct State {
   pub running: bool,
-  pub path: String,
+  search: String,
   pub found_mp3_files: Vec<Mp3File>,
   pub selected_song: Option<SongTags>,
 }
 
-impl App {
-  pub fn new() -> Self {
-    let mut app = App {
-      path: "".into(),
-      running: true,
-      found_mp3_files: vec![],
-      selected_song: None,
-    };
-    dirs::download_dir().map(|dir| app.find_mp3_files(dir));
-    dirs::audio_dir().map(|dir| app.find_mp3_files(dir));
-    app
-  }
+impl State {
   fn find_mp3_files(&mut self, path: PathBuf) {
     if let Ok(entries) = fs::read_dir(path) {
       let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
@@ -104,6 +132,39 @@ impl App {
             },
           });
         }
+      }
+    }
+  }
+}
+
+pub struct App {
+  pub state: State,
+  ui: Ui,
+}
+
+impl App {
+  pub fn new() -> Self {
+    let mut app = App {
+      state: State {
+        running: true,
+        search: "".into(),
+        found_mp3_files: vec![],
+        selected_song: None,
+      },
+      ui: Ui::new(),
+    };
+    dirs::download_dir().map(|dir| app.state.find_mp3_files(dir));
+    dirs::audio_dir().map(|dir| app.state.find_mp3_files(dir));
+    app
+  }
+  pub fn poll(&mut self) {
+    if poll(Duration::from_millis(100)).unwrap() {
+      self.ui.draw(&mut self.state);
+      match event::read().unwrap() {
+        Event::Key(key_event) => if key_event.kind == KeyEventKind::Press {
+          self.ui.handle_key_event(key_event, &mut self.state);
+        }
+        _ => {}
       }
     }
   }

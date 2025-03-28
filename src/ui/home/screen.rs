@@ -11,8 +11,11 @@ use ratatui::{
 use tui_textarea::TextArea;
 use uuid::Uuid;
 use crate::{
-  app::app::{ App, EditableTag, SongTags, TagState },
-  ui::ui::{ basic_text_area, ui_enums, BlockTrait, Screen, TableTrait, TextAreaTrait, UiCommand },
+  app::app::{ App, EditableTag, EditableTagTrait, SongTags, State, TagState },
+  ui::{
+    lyrics::screen::LyricsScreen,
+    ui::{ basic_text_area, ui_enums, BlockTrait, Screen, TableTrait, TextAreaTrait, UiCommand },
+  },
 };
 
 #[derive(PartialEq, Debug)]
@@ -65,7 +68,7 @@ impl HomeScreen {
 }
 
 impl Screen for HomeScreen {
-  fn draw(&mut self, frame: &mut Frame, app: &App) {
+  fn draw(&mut self, frame: &mut Frame, state: &State) {
     let hor_l = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]);
     let [sidebar_area, editor_area] = hor_l.areas(frame.area());
     let vert_l = Layout::vertical([
@@ -92,7 +95,7 @@ impl Screen for HomeScreen {
 
     self.search_input.highlight_border(self.selected_section == HomeScreenSection::Search);
     self.files_table = self.files_table.clone().rows({
-      let rows = app.found_mp3_files
+      let rows = state.found_mp3_files
         .iter()
         .enumerate()
         .map(|(i, f)|
@@ -157,7 +160,11 @@ impl Screen for HomeScreen {
     frame.render_widget(&debug_p, debug_area);
   }
 
-  fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) -> Option<UiCommand> {
+  fn handle_key_event<'a>(
+    &'a mut self,
+    key_event: KeyEvent,
+    state: &'a mut State
+  ) -> Option<UiCommand> {
     match (key_event.code, key_event.modifiers) {
       (KeyCode::Up, KeyModifiers::CONTROL) => {
         match &self.selected_section {
@@ -218,23 +225,23 @@ impl Screen for HomeScreen {
       (KeyCode::Up, KeyModifiers::NONE) => {
         match self.selected_section {
           HomeScreenSection::Table(i) => {
-            let new_i = if i > 0 { i - 1 } else { app.found_mp3_files.len() - 1 };
+            let new_i = if i > 0 { i - 1 } else { state.found_mp3_files.len() - 1 };
             self.selected_section = HomeScreenSection::Table(new_i);
-            app.selected_song = {
-              let path = app.found_mp3_files[new_i].path.clone();
+            state.selected_song = {
+              let path = state.found_mp3_files[new_i].path.clone();
               Some(SongTags::new(path))
             };
             self.title_input.set_text(
-              app.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
             );
             self.artist_input.set_text(
-              app.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
             );
             self.year_input.set_text(
-              app.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
             );
             self.genre_input.set_text(
-              app.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
             );
             None
           }
@@ -258,21 +265,21 @@ impl Screen for HomeScreen {
         match &self.selected_section {
           HomeScreenSection::Search => {
             self.selected_section = HomeScreenSection::Table(0);
-            app.selected_song = {
-              let path = app.found_mp3_files[0].path.clone();
+            state.selected_song = {
+              let path = state.found_mp3_files[0].path.clone();
               Some(SongTags::new(path))
             };
             self.title_input.set_text(
-              app.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
             );
             self.artist_input.set_text(
-              app.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
             );
             self.year_input.set_text(
-              app.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
             );
             self.genre_input.set_text(
-              app.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
             );
             self.title_input.highlight_text(false);
             self.artist_input.highlight_text(false);
@@ -325,23 +332,23 @@ impl Screen for HomeScreen {
       (KeyCode::Down, KeyModifiers::NONE) => {
         match self.selected_section {
           HomeScreenSection::Table(i) => {
-            let new_i = if i == app.found_mp3_files.len() - 1 { 0 } else { i + 1 };
+            let new_i = if i == state.found_mp3_files.len() - 1 { 0 } else { i + 1 };
             self.selected_section = HomeScreenSection::Table(new_i);
-            app.selected_song = {
-              let path = app.found_mp3_files[new_i].path.clone();
+            state.selected_song = {
+              let path = state.found_mp3_files[new_i].path.clone();
               Some(SongTags::new(path))
             };
             self.title_input.set_text(
-              app.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
             );
             self.artist_input.set_text(
-              app.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
             );
             self.year_input.set_text(
-              app.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
             );
             self.genre_input.set_text(
-              app.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
+              state.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
             );
             self.title_input.highlight_text(false);
             self.artist_input.highlight_text(false);
@@ -368,10 +375,10 @@ impl Screen for HomeScreen {
           _ => false,
         }
       => {
-        match &self.selected_section {
+        match &mut self.selected_section {
           HomeScreenSection::Table(i) => {
-            let song_file = &app.found_mp3_files[*i];
-            app.selected_song = Some(SongTags::new(song_file.path.clone()));
+            let song_file = &state.found_mp3_files[*i];
+            state.selected_song = Some(SongTags::new(song_file.path.clone()));
             self.selected_section = HomeScreenSection::Editor(
               *i,
               EditorSectionSelectable::TitleInput
@@ -381,7 +388,13 @@ impl Screen for HomeScreen {
           HomeScreenSection::Editor(i, editor_section) => {
             match editor_section {
               EditorSectionSelectable::Lyrics => {
-                Some(UiCommand::ChangeScreen(ui_enums::Screen::Lyrics))
+                Some(
+                  UiCommand::ChangeScreen(
+                    ui_enums::Screen::Lyrics(
+                      LyricsScreen::new(state.selected_song.take().unwrap().lyrics)
+                    )
+                  )
+                )
               }
               _ => None,
             }
@@ -399,7 +412,7 @@ impl Screen for HomeScreen {
             match editor_section {
               EditorSectionSelectable::TitleInput => {
                 if self.title_input.input(key_event) {
-                  if let Some(song) = &mut app.selected_song {
+                  if let Some(song) = &mut state.selected_song {
                     song.name.edit(self.title_input.first_line_text());
                     self.title_input.highlight_text(match song.name.state {
                       TagState::Changed(_) => true,
@@ -411,7 +424,7 @@ impl Screen for HomeScreen {
               }
               EditorSectionSelectable::ArtistInput => {
                 if self.artist_input.input(key_event) {
-                  if let Some(song) = &mut app.selected_song {
+                  if let Some(song) = &mut state.selected_song {
                     song.artist.edit(self.artist_input.first_line_text());
                     self.artist_input.highlight_text(match song.artist.state {
                       TagState::Changed(_) => true,
@@ -423,7 +436,7 @@ impl Screen for HomeScreen {
               }
               EditorSectionSelectable::YearInput => {
                 if self.year_input.input(key_event) {
-                  if let Some(song) = &mut app.selected_song {
+                  if let Some(song) = &mut state.selected_song {
                     song.year.edit(self.year_input.first_line_text());
                     self.year_input.highlight_text(match song.year.state {
                       TagState::Changed(_) => true,
@@ -435,7 +448,7 @@ impl Screen for HomeScreen {
               }
               EditorSectionSelectable::Genre => {
                 if self.genre_input.input(key_event) {
-                  if let Some(song) = &mut app.selected_song {
+                  if let Some(song) = &mut state.selected_song {
                     song.genre.edit(self.genre_input.first_line_text());
                     self.genre_input.highlight_text(match song.genre.state {
                       TagState::Changed(_) => true,

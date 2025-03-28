@@ -1,5 +1,15 @@
+<!--
+has a magic space in-between
+ s
+ s
+ s
+ dir
+-->
+
 # todo
 
+- store tags for every found music file to filter on all fields (including lyrics)
+- lyrics screen mutably references `SongTags` so it needs a lifetime. before coding - read <!-- https://github.com/pretzelhammer/rust-blog?tab=readme-ov-file -->
 - use modules to encapsulate movement between sections. will be useful for side-effects (when ctrl-down into table should also put text into inputs, cannot change sections just by modifying app state bcs it's not enough)
 - if input text was highlighted (meaning changed happened), selecting another song does not reset it
 - search bar not working
