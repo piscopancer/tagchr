@@ -4,6 +4,9 @@
 - if input text was highlighted (meaning changed happened), selecting another song does not reset it
 - search bar not working
 - use hashmap to store screens by enum and generic trait (for unwrapping during compilation)
+<!-- - (maybe) `TagInput(TextArea)` that changes tag that does field editing and highlighting on its own to avoid duplication -->
+- after selecting another song with arrow keys, text highlight should be auto removed
+- trait `TagWidget` and structs `TagInput`/`TagButton` (for lyrics), still too generic, idk if i need this abstraction
 
 <!-- -->
 

@@ -1,7 +1,7 @@
 use crossterm::event::KeyEvent;
 use ratatui::{ style::Stylize, text::Line, widgets::Paragraph, Frame };
 
-use crate::{ app::app::App, ui::ui::Screen };
+use crate::{ app::app::App, ui::ui::{ Screen, UiCommand } };
 
 pub struct LyricsScreen {}
 
@@ -13,10 +13,10 @@ impl LyricsScreen {
 
 impl Screen for LyricsScreen {
   fn draw(&mut self, frame: &mut Frame, app: &App) {
-    let p = Paragraph::new(vec![Line::from("".red())]);
+    let p = Paragraph::new(vec![Line::from("LOL".red())]);
     frame.render_widget(&p, frame.area());
   }
-  fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) {
-    todo!()
+  fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) -> Option<UiCommand> {
+    None
   }
 }

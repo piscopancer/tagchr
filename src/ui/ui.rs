@@ -1,21 +1,26 @@
-use std::string;
-
 use crossterm::event::{ KeyCode, KeyEvent, KeyModifiers };
-use ratatui::{ style::{ Style, Stylize }, widgets::{ Block, BorderType, List, Table }, Frame };
+use ratatui::{
+  style::{ Color, Style, Styled, Stylize },
+  widgets::{ Block, BorderType, List, Table },
+  Frame,
+};
 use tui_textarea::TextArea;
 use crate::app::app::App;
-
 use super::{ home::screen::HomeScreen, lyrics::screen::LyricsScreen };
 
-mod enums {
+pub mod ui_enums {
   pub enum Screen {
     Home,
     Lyrics,
   }
 }
 
+pub enum UiCommand {
+  ChangeScreen(ui_enums::Screen),
+}
+
 pub struct Ui {
-  screen: enums::Screen,
+  screen: ui_enums::Screen,
   home_screen: HomeScreen,
   lyrics_screen: LyricsScreen,
 }
@@ -23,23 +28,20 @@ pub struct Ui {
 impl Ui {
   pub fn new() -> Self {
     Self {
-      screen: enums::Screen::Home,
+      screen: ui_enums::Screen::Home,
       home_screen: HomeScreen::new(),
       lyrics_screen: LyricsScreen::new(),
     }
   }
   pub fn draw(&mut self, frame: &mut Frame, app: &App) {
     match self.screen {
-      enums::Screen::Home => {
+      ui_enums::Screen::Home => {
         self.home_screen.draw(frame, app);
       }
-      enums::Screen::Lyrics => {
-        self.home_screen.draw(frame, app);
+      ui_enums::Screen::Lyrics => {
+        self.lyrics_screen.draw(frame, app);
       }
     }
-  }
-  pub fn change_screen(&mut self, screen: enums::Screen) {
-    self.screen = screen;
   }
   pub fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) {
     match (key_event.code, key_event.modifiers) {
@@ -48,13 +50,25 @@ impl Ui {
       }
       (code, modifiers) => {
         match self.screen {
-          enums::Screen::Home => {
-            self.home_screen.handle_key_event(key_event, app);
+          ui_enums::Screen::Home => {
+            if let Some(cmd) = self.home_screen.handle_key_event(key_event, app) {
+              match cmd {
+                UiCommand::ChangeScreen(screen) => {
+                  self.screen = screen;
+                }
+              }
+            }
           }
-          enums::Screen::Lyrics => {
-            self.lyrics_screen.handle_key_event(key_event, app);
+          ui_enums::Screen::Lyrics => {
+            if let Some(cmd) = self.lyrics_screen.handle_key_event(key_event, app) {
+              match cmd {
+                UiCommand::ChangeScreen(screen) => {
+                  self.screen = screen;
+                }
+              }
+            }
           }
-        }
+        };
       }
     }
   }
@@ -62,7 +76,7 @@ impl Ui {
 
 pub trait Screen {
   fn draw(&mut self, frame: &mut Frame, app: &App);
-  fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App);
+  fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) -> Option<UiCommand>;
 }
 
 pub fn basic_text_area(title: String) -> TextArea<'static> {
@@ -82,6 +96,18 @@ impl TableTrait for Table<'_> {
         .title_style(if v { Style::new().yellow() } else { Style::new().reset() })
         .border_style(if v { Style::new().yellow() } else { Style::new().reset() })
     )
+  }
+}
+
+pub trait BlockTrait {
+  fn highlighted(&self, v: bool) -> Self;
+}
+
+impl BlockTrait for Block<'_> {
+  fn highlighted(&self, v: bool) -> Self {
+    Block::from(self.clone())
+      .title_style(if v { self.style().yellow() } else { self.style().fg(Color::Reset) })
+      .border_style(if v { self.style().yellow() } else { self.style().fg(Color::Reset) })
   }
 }
 
