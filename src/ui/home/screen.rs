@@ -11,58 +11,117 @@ use ratatui::{
 use tui_textarea::TextArea;
 use uuid::Uuid;
 use crate::{
-  app::app::{ App, EditableTag, EditableTagTrait, SongTags, State, TagState },
+  app::app::{ App, Editable, EditableState, LyricsEditableTag, SongTags, State },
   ui::{
     lyrics::screen::LyricsScreen,
-    ui::{ basic_text_area, ui_enums, BlockTrait, Screen, TableTrait, TextAreaTrait, UiCommand },
+    ui::{
+      basic_text_area,
+      ui_enums,
+      BlockTrait,
+      Screen,
+      SelectableParagraph,
+      SelectableTable,
+      SelectableWidget,
+      TextAreaTrait,
+      Ui,
+      UiCommand,
+      WidgetWithEditableContent,
+    },
   },
 };
 
-#[derive(PartialEq, Debug)]
-pub enum EditorSectionSelectable {
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum EditorSelectableItem {
   TitleInput,
   ArtistInput,
   YearInput,
-  Genre,
-  Lyrics,
+  GenreInput,
+  LyricsButton,
 }
 
-#[derive(PartialEq, Debug)]
-pub enum HomeScreenSection {
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum SelectableItem {
   Search,
   Table(usize),
-  Editor(usize, EditorSectionSelectable),
+  Editor(usize, EditorSelectableItem),
 }
 
 pub struct HomeScreen {
-  selected_section: HomeScreenSection,
+  pub selection: SelectableItem,
   search_input: TextArea<'static>,
-  files_table: Table<'static>,
+  files_table: SelectableTable,
   title_input: TextArea<'static>,
   artist_input: TextArea<'static>,
   year_input: TextArea<'static>,
   genre_input: TextArea<'static>,
-  lyrics_button: Paragraph<'static>,
+  lyrics_button: SelectableParagraph,
 }
 
-pub const TABLE_BLOCK: Block<'static> = Block::bordered().border_type(BorderType::Rounded);
-
 impl HomeScreen {
-  pub fn new() -> Self {
+  pub fn new(selection: SelectableItem, state: Option<&State>) -> Self {
+    let song_tags = state
+      .map(|s| {
+        match &selection {
+          SelectableItem::Table(i) | SelectableItem::Editor(i, _) =>
+            Some(&s.found_mp3_files[*i].tags),
+          _ => None,
+        }
+      })
+      .flatten();
     Self {
-      selected_section: HomeScreenSection::Search,
-      files_table: Table::default()
-        .column_spacing(1)
-        .widths([Constraint::Fill(1), Constraint::Fill(1), Constraint::Fill(1)])
-        .block(TABLE_BLOCK),
-      search_input: basic_text_area("Search".into()),
-      title_input: basic_text_area("Title".into()),
-      artist_input: basic_text_area("Artist".into()),
-      year_input: basic_text_area("Year".into()),
-      genre_input: basic_text_area("Genre".into()),
-      lyrics_button: Paragraph::new(
-        vec![Line::default(), Line::from("Edit").centered(), Line::default()]
-      ).block(Block::bordered().border_type(BorderType::Rounded).title_top("Lyrics")),
+      selection,
+      files_table: {
+        let b = Block::bordered().border_type(BorderType::Rounded);
+        SelectableTable::new(
+          Table::default()
+            .column_spacing(1)
+            .widths([Constraint::Fill(1), Constraint::Fill(1), Constraint::Fill(1)])
+            .block(b.clone()),
+          b
+        )
+      },
+      search_input: basic_text_area(
+        "Search".into(),
+        state.map(|s| s.search.clone())
+      ).focused(selection == SelectableItem::Search),
+      title_input: basic_text_area(
+        "Title".into(),
+        song_tags.map(|t| t.title.0.to_string())
+      ).focused(match selection {
+        SelectableItem::Editor(_, EditorSelectableItem::TitleInput) => true,
+        _ => false,
+      }),
+      artist_input: basic_text_area(
+        "Artist".into(),
+        song_tags.map(|t| t.artist.0.to_string())
+      ).focused(match selection {
+        SelectableItem::Editor(_, EditorSelectableItem::ArtistInput) => true,
+        _ => false,
+      }),
+      year_input: basic_text_area(
+        "Year".into(),
+        song_tags.map(|t| t.year.0.to_string())
+      ).focused(match selection {
+        SelectableItem::Editor(_, EditorSelectableItem::YearInput) => true,
+        _ => false,
+      }),
+      genre_input: basic_text_area(
+        "Genre".into(),
+        song_tags.map(|t| t.genre.0.to_string())
+      ).focused(match selection {
+        SelectableItem::Editor(_, EditorSelectableItem::GenreInput) => true,
+        _ => false,
+      }),
+      lyrics_button: {
+        let b = Block::bordered().border_type(BorderType::Rounded).title_top("Lyrics");
+        let p = SelectableParagraph::new(
+          Paragraph::new(
+            vec![Line::default(), Line::from("Edit").centered(), Line::default()]
+          ).block(b.clone()),
+          b
+        );
+        p
+      },
     }
   }
 }
@@ -93,8 +152,8 @@ impl Screen for HomeScreen {
       .flex(Flex::Start)
       .areas(editor_area);
 
-    self.search_input.highlight_border(self.selected_section == HomeScreenSection::Search);
-    self.files_table = self.files_table.clone().rows({
+    self.search_input.focus(self.selection == SelectableItem::Search);
+    self.files_table.table = self.files_table.table.clone().rows({
       let rows = state.found_mp3_files
         .iter()
         .enumerate()
@@ -105,57 +164,51 @@ impl Screen for HomeScreen {
               Cell::new(f.path.clone().green().italic()),
               Cell::new(f.modified_date.clone().dark_gray())
             ]
-          ).style(match &self.selected_section {
-            HomeScreenSection::Table(i2) if *i2 == i => { Style::new().reversed() }
-            HomeScreenSection::Editor(i2, ..) if *i2 == i => { Style::new().on_dark_gray() }
+          ).style(match &self.selection {
+            SelectableItem::Table(i2) if *i2 == i => { Style::new().reversed() }
+            SelectableItem::Editor(i2, ..) if *i2 == i => { Style::new().on_dark_gray() }
             _ => { Style::new() }
           })
         )
         .collect::<Vec<_>>();
       rows
     });
-    self.files_table = self.files_table.created_highlighted(TABLE_BLOCK, match
-      self.selected_section
-    {
-      HomeScreenSection::Table(_) => true,
+    self.files_table.focus(match self.selection {
+      SelectableItem::Table(_) => true,
       _ => false,
     });
-    self.title_input.highlight_border(match self.selected_section {
-      HomeScreenSection::Editor(_, EditorSectionSelectable::TitleInput) => true,
+    self.title_input.focus(match self.selection {
+      SelectableItem::Editor(_, EditorSelectableItem::TitleInput) => true,
       _ => false,
     });
 
-    self.artist_input.highlight_border(match self.selected_section {
-      HomeScreenSection::Editor(_, EditorSectionSelectable::ArtistInput) => true,
+    self.artist_input.focus(match self.selection {
+      SelectableItem::Editor(_, EditorSelectableItem::ArtistInput) => true,
       _ => false,
     });
-    self.year_input.highlight_border(match self.selected_section {
-      HomeScreenSection::Editor(_, EditorSectionSelectable::YearInput) => true,
+    self.year_input.focus(match self.selection {
+      SelectableItem::Editor(_, EditorSelectableItem::YearInput) => true,
       _ => false,
     });
-    self.genre_input.highlight_border(match self.selected_section {
-      HomeScreenSection::Editor(_, EditorSectionSelectable::Genre) => true,
+    self.genre_input.focus(match self.selection {
+      SelectableItem::Editor(_, EditorSelectableItem::GenreInput) => true,
       _ => false,
     });
-    self.lyrics_button = self.lyrics_button.clone().block(
-      Block::bordered()
-        .border_type(BorderType::Rounded)
-        .title_top("Lyrics")
-        .highlighted(match self.selected_section {
-          HomeScreenSection::Editor(_, EditorSectionSelectable::Lyrics) => true,
-          _ => false,
-        })
-    );
+    self.lyrics_button.focus(match self.selection {
+      SelectableItem::Editor(_, EditorSelectableItem::LyricsButton) => true,
+      _ => false,
+    });
+
     frame.render_widget(&self.search_input, path_input_area);
-    frame.render_widget(&self.files_table, list_area);
+    frame.render_widget(&self.files_table.table, list_area);
     frame.render_widget(&self.title_input, title_input_area);
     frame.render_widget(&self.artist_input, artist_input_area);
     frame.render_widget(&self.year_input, year_input_area);
     frame.render_widget(&self.genre_input, genre_input_area);
-    frame.render_widget(&self.lyrics_button, lyrics_button_area);
+    frame.render_widget(&self.lyrics_button.paragraph, lyrics_button_area);
     // debug
     let debug_p = Paragraph::new(
-      vec![Line::from(format!("sec [{:?}] ", self.selected_section))]
+      vec![Line::from(format!("sec [{:?}] ", self.selection))]
     ).light_magenta();
     frame.render_widget(&debug_p, debug_area);
   }
@@ -167,54 +220,39 @@ impl Screen for HomeScreen {
   ) -> Option<UiCommand> {
     match (key_event.code, key_event.modifiers) {
       (KeyCode::Up, KeyModifiers::CONTROL) => {
-        match &self.selected_section {
-          HomeScreenSection::Table(_) => {
-            self.selected_section = HomeScreenSection::Search;
+        match &self.selection {
+          SelectableItem::Table(_) => {
+            self.selection = SelectableItem::Search;
             self.title_input.clear();
             self.artist_input.clear();
             self.year_input.clear();
             self.genre_input.clear();
-            self.title_input.highlight_text(false);
-            self.artist_input.highlight_text(false);
-            self.year_input.highlight_text(false);
-            self.genre_input.highlight_text(false);
+            self.title_input.highlight_content(false);
+            self.artist_input.highlight_content(false);
+            self.year_input.highlight_content(false);
+            self.genre_input.highlight_content(false);
             None
           }
-          HomeScreenSection::Editor(i, editor_selection) => {
+          SelectableItem::Editor(i, editor_selection) => {
             match editor_selection {
-              EditorSectionSelectable::TitleInput => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::Lyrics
-                );
+              EditorSelectableItem::TitleInput => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::LyricsButton);
                 None
               }
-              EditorSectionSelectable::ArtistInput => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::TitleInput
-                );
+              EditorSelectableItem::ArtistInput => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::TitleInput);
                 None
               }
-              EditorSectionSelectable::YearInput => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::ArtistInput
-                );
+              EditorSelectableItem::YearInput => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::ArtistInput);
                 None
               }
-              EditorSectionSelectable::Genre => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::YearInput
-                );
+              EditorSelectableItem::GenreInput => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::YearInput);
                 None
               }
-              EditorSectionSelectable::Lyrics => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::Genre
-                );
+              EditorSelectableItem::LyricsButton => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::GenreInput);
                 None
               }
             }
@@ -223,38 +261,24 @@ impl Screen for HomeScreen {
         }
       }
       (KeyCode::Up, KeyModifiers::NONE) => {
-        match self.selected_section {
-          HomeScreenSection::Table(i) => {
+        match self.selection {
+          SelectableItem::Table(i) => {
             let new_i = if i > 0 { i - 1 } else { state.found_mp3_files.len() - 1 };
-            self.selected_section = HomeScreenSection::Table(new_i);
-            state.selected_song = {
-              let path = state.found_mp3_files[new_i].path.clone();
-              Some(SongTags::new(path))
-            };
-            self.title_input.set_text(
-              state.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
-            );
-            self.artist_input.set_text(
-              state.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
-            );
-            self.year_input.set_text(
-              state.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
-            );
-            self.genre_input.set_text(
-              state.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
-            );
+            self.selection = SelectableItem::Table(new_i);
+            let tags = &state.found_mp3_files.get(new_i).unwrap().tags;
+            self.title_input.set_text(tags.title.0.to_string());
+            self.artist_input.set_text(tags.artist.0.to_string());
+            self.year_input.set_text(tags.year.0.to_string());
+            self.genre_input.set_text(tags.genre.0.to_string());
             None
           }
           _ => None,
         }
       }
       (KeyCode::Right, KeyModifiers::CONTROL) => {
-        match &self.selected_section {
-          HomeScreenSection::Table(i) => {
-            self.selected_section = HomeScreenSection::Editor(
-              *i,
-              EditorSectionSelectable::TitleInput
-            );
+        match &self.selection {
+          SelectableItem::Table(i) => {
+            self.selection = SelectableItem::Editor(*i, EditorSelectableItem::TitleInput);
             None
           }
 
@@ -262,66 +286,40 @@ impl Screen for HomeScreen {
         }
       }
       (KeyCode::Down, KeyModifiers::CONTROL) => {
-        match &self.selected_section {
-          HomeScreenSection::Search => {
-            self.selected_section = HomeScreenSection::Table(0);
-            state.selected_song = {
-              let path = state.found_mp3_files[0].path.clone();
-              Some(SongTags::new(path))
-            };
-            self.title_input.set_text(
-              state.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
-            );
-            self.artist_input.set_text(
-              state.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
-            );
-            self.year_input.set_text(
-              state.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
-            );
-            self.genre_input.set_text(
-              state.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
-            );
-            self.title_input.highlight_text(false);
-            self.artist_input.highlight_text(false);
-            self.year_input.highlight_text(false);
-            self.genre_input.highlight_text(false);
+        match &self.selection {
+          SelectableItem::Search => {
+            self.selection = SelectableItem::Table(0);
+            let tags = &state.found_mp3_files[0].tags;
+            self.title_input.set_text(tags.title.0.to_string());
+            self.artist_input.set_text(tags.artist.0.to_string());
+            self.year_input.set_text(tags.year.0.to_string());
+            self.genre_input.set_text(tags.genre.0.to_string());
+            self.title_input.highlight_content(false);
+            self.artist_input.highlight_content(false);
+            self.year_input.highlight_content(false);
+            self.genre_input.highlight_content(false);
             None
           }
-          HomeScreenSection::Editor(i, editor_selection) => {
+          SelectableItem::Editor(i, editor_selection) => {
             match editor_selection {
-              EditorSectionSelectable::TitleInput => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::ArtistInput
-                );
+              EditorSelectableItem::TitleInput => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::ArtistInput);
                 None
               }
-              EditorSectionSelectable::ArtistInput => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::YearInput
-                );
+              EditorSelectableItem::ArtistInput => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::YearInput);
                 None
               }
-              EditorSectionSelectable::YearInput => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::Genre
-                );
+              EditorSelectableItem::YearInput => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::GenreInput);
                 None
               }
-              EditorSectionSelectable::Genre => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::Lyrics
-                );
+              EditorSelectableItem::GenreInput => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::LyricsButton);
                 None
               }
-              EditorSectionSelectable::Lyrics => {
-                self.selected_section = HomeScreenSection::Editor(
-                  *i,
-                  EditorSectionSelectable::TitleInput
-                );
+              EditorSelectableItem::LyricsButton => {
+                self.selection = SelectableItem::Editor(*i, EditorSelectableItem::TitleInput);
                 None
               }
             }
@@ -330,71 +328,49 @@ impl Screen for HomeScreen {
         }
       }
       (KeyCode::Down, KeyModifiers::NONE) => {
-        match self.selected_section {
-          HomeScreenSection::Table(i) => {
+        match self.selection {
+          SelectableItem::Table(i) => {
             let new_i = if i == state.found_mp3_files.len() - 1 { 0 } else { i + 1 };
-            self.selected_section = HomeScreenSection::Table(new_i);
-            state.selected_song = {
-              let path = state.found_mp3_files[new_i].path.clone();
-              Some(SongTags::new(path))
-            };
-            self.title_input.set_text(
-              state.selected_song.as_ref().unwrap().name.original.clone().unwrap_or_default()
-            );
-            self.artist_input.set_text(
-              state.selected_song.as_ref().unwrap().artist.original.clone().unwrap_or_default()
-            );
-            self.year_input.set_text(
-              state.selected_song.as_ref().unwrap().year.original.clone().unwrap_or_default()
-            );
-            self.genre_input.set_text(
-              state.selected_song.as_ref().unwrap().genre.original.clone().unwrap_or_default()
-            );
-            self.title_input.highlight_text(false);
-            self.artist_input.highlight_text(false);
-            self.year_input.highlight_text(false);
-            self.genre_input.highlight_text(false);
+            self.selection = SelectableItem::Table(new_i);
+            let tags = &state.found_mp3_files[new_i].tags;
+            self.title_input.set_text(tags.title.0.to_string());
+            self.artist_input.set_text(tags.artist.0.to_string());
+            self.year_input.set_text(tags.year.0.to_string());
+            self.genre_input.set_text(tags.genre.0.to_string());
+            self.title_input.highlight_content(false);
+            self.artist_input.highlight_content(false);
+            self.year_input.highlight_content(false);
+            self.genre_input.highlight_content(false);
             None
           }
           _ => None,
         }
       }
       (KeyCode::Left, KeyModifiers::CONTROL) => {
-        match &self.selected_section {
-          HomeScreenSection::Editor(i, _) => {
-            self.selected_section = HomeScreenSection::Table(*i);
+        match &self.selection {
+          SelectableItem::Editor(i, _) => {
+            self.selection = SelectableItem::Table(*i);
             None
           }
           _ => None,
         }
       }
       (KeyCode::Enter | KeyCode::Backspace | KeyCode::Tab, ..) if
-        match &self.selected_section {
-          | HomeScreenSection::Table(_)
-          | HomeScreenSection::Editor(_, EditorSectionSelectable::Lyrics) => true,
+        match &self.selection {
+          | SelectableItem::Table(_)
+          | SelectableItem::Editor(_, EditorSelectableItem::LyricsButton) => true,
           _ => false,
         }
       => {
-        match &mut self.selected_section {
-          HomeScreenSection::Table(i) => {
-            let song_file = &state.found_mp3_files[*i];
-            state.selected_song = Some(SongTags::new(song_file.path.clone()));
-            self.selected_section = HomeScreenSection::Editor(
-              *i,
-              EditorSectionSelectable::TitleInput
-            );
+        match &mut self.selection {
+          SelectableItem::Table(i) => {
+            self.selection = SelectableItem::Editor(*i, EditorSelectableItem::TitleInput);
             None
           }
-          HomeScreenSection::Editor(i, editor_section) => {
+          SelectableItem::Editor(i, editor_section) => {
             match editor_section {
-              EditorSectionSelectable::Lyrics => {
-                Some(
-                  UiCommand::ChangeScreen(
-                    ui_enums::Screen::Lyrics(
-                      LyricsScreen::new(state.selected_song.take().unwrap().lyrics)
-                    )
-                  )
-                )
+              EditorSelectableItem::LyricsButton => {
+                Some(UiCommand::ChangeScreen(ui_enums::ScreenKind::Lyrics))
               }
               _ => None,
             }
@@ -403,58 +379,51 @@ impl Screen for HomeScreen {
         }
       }
       (key_code, modifiers) => {
-        match &self.selected_section {
-          HomeScreenSection::Search => {
+        match &self.selection {
+          SelectableItem::Search => {
             self.search_input.input(key_event);
             None
           }
-          HomeScreenSection::Editor(_, editor_section) => {
+          SelectableItem::Editor(i, editor_section) => {
+            let tags = &mut state.found_mp3_files[*i].tags;
             match editor_section {
-              EditorSectionSelectable::TitleInput => {
+              EditorSelectableItem::TitleInput => {
                 if self.title_input.input(key_event) {
-                  if let Some(song) = &mut state.selected_song {
-                    song.name.edit(self.title_input.first_line_text());
-                    self.title_input.highlight_text(match song.name.state {
-                      TagState::Changed(_) => true,
-                      _ => false,
-                    });
-                  }
+                  tags.title.0.edit(self.title_input.first_line_text());
+                  self.title_input.highlight_content(match tags.title.0.state {
+                    EditableState::Changed(_) => true,
+                    _ => false,
+                  });
                 }
                 None
               }
-              EditorSectionSelectable::ArtistInput => {
+              EditorSelectableItem::ArtistInput => {
                 if self.artist_input.input(key_event) {
-                  if let Some(song) = &mut state.selected_song {
-                    song.artist.edit(self.artist_input.first_line_text());
-                    self.artist_input.highlight_text(match song.artist.state {
-                      TagState::Changed(_) => true,
-                      _ => false,
-                    });
-                  }
+                  tags.artist.0.edit(self.artist_input.first_line_text());
+                  self.artist_input.highlight_content(match tags.artist.0.state {
+                    EditableState::Changed(_) => true,
+                    _ => false,
+                  });
                 }
                 None
               }
-              EditorSectionSelectable::YearInput => {
+              EditorSelectableItem::YearInput => {
                 if self.year_input.input(key_event) {
-                  if let Some(song) = &mut state.selected_song {
-                    song.year.edit(self.year_input.first_line_text());
-                    self.year_input.highlight_text(match song.year.state {
-                      TagState::Changed(_) => true,
-                      _ => false,
-                    });
-                  }
+                  tags.year.0.edit(self.year_input.first_line_text());
+                  self.year_input.highlight_content(match tags.year.0.state {
+                    EditableState::Changed(_) => true,
+                    _ => false,
+                  });
                 }
                 None
               }
-              EditorSectionSelectable::Genre => {
+              EditorSelectableItem::GenreInput => {
                 if self.genre_input.input(key_event) {
-                  if let Some(song) = &mut state.selected_song {
-                    song.genre.edit(self.genre_input.first_line_text());
-                    self.genre_input.highlight_text(match song.genre.state {
-                      TagState::Changed(_) => true,
-                      _ => false,
-                    });
-                  }
+                  tags.genre.0.edit(self.genre_input.first_line_text());
+                  self.genre_input.highlight_content(match tags.genre.0.state {
+                    EditableState::Changed(_) => true,
+                    _ => false,
+                  });
                 }
                 None
               }
@@ -467,4 +436,13 @@ impl Screen for HomeScreen {
       _ => None,
     }
   }
+  // fn navigate(&mut self, ui: &mut Ui, to: ui_enums::ScreenKind) {
+  //   match to {
+  //     ui_enums::ScreenKind::Home => {}
+  //     //
+  //     ui_enums::ScreenKind::Lyrics => {
+  //       ui.screen = ui_enums::Screen::Lyrics(LyricsScreen::new(ui.selected_song_index().unwrap()));
+  //     }
+  //   }
+  // }
 }

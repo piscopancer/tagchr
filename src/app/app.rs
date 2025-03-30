@@ -1,4 +1,10 @@
-use std::{ fs, io::Stdout, path::{ Path, PathBuf }, time::{ Duration, SystemTime } };
+use std::{
+  fmt::{ self, Display },
+  fs,
+  io::Stdout,
+  path::{ Path, PathBuf },
+  time::{ Duration, SystemTime },
+};
 use chrono::{ DateTime, Local, Utc };
 use crossterm::event::{ self, poll, Event, KeyEventKind };
 use humantime::format_duration;
@@ -12,90 +18,106 @@ pub struct Mp3File {
   pub name: String,
   pub path: String,
   pub modified_date: String,
+  pub tags: SongTags,
 }
 
-#[derive(Clone, Default)]
-pub enum TagState<T> {
+#[derive(Clone, Default, Debug)]
+pub enum EditableState {
   #[default]
   Unchanged,
-  Changed(T),
+  Changed(String),
   Removed,
 }
 
-#[derive(Clone)]
-pub struct EditableTag<T> {
-  pub original: Option<T>,
-  pub state: TagState<T>,
-}
-
-pub trait EditableTagTrait<T> {
-  fn edit(&mut self, new: T);
-}
-
-impl<T> EditableTag<T> {
-  pub fn new(original: Option<T>) -> Self {
-    Self { original, state: TagState::default() }
-  }
-}
-
-impl EditableTagTrait<String> for EditableTag<String> {
-  fn edit(&mut self, new: String) {
-    self.state = if let Some(original) = &self.original {
+impl EditableState {
+  fn compare(original: Option<&String>, new: String) -> Self {
+    if let Some(original) = original {
       if *original == new {
-        TagState::Unchanged
+        EditableState::Unchanged
       } else if new.chars().count() == 0 {
-        TagState::Removed
+        EditableState::Removed
       } else {
-        TagState::Changed(new)
+        EditableState::Changed(new)
       }
     } else {
-      TagState::Changed(new)
-    };
+      if new.chars().count() == 0 { EditableState::Unchanged } else { EditableState::Changed(new) }
+    }
   }
 }
 
-impl EditableTagTrait<Lyrics> for EditableTag<Lyrics> {
-  fn edit(&mut self, new: Lyrics) {
-    self.state = if let Some(original) = &self.original {
-      if
-        original.description == new.description ||
-        original.lang == new.lang ||
-        original.text == new.text
-      {
-        TagState::Unchanged
-      } else if
-        new.description.chars().count() == 0 ||
-        new.lang.chars().count() == 0 ||
-        new.text.chars().count() == 0
-      {
-        TagState::Removed
-      } else {
-        TagState::Changed(new)
-      }
-    } else {
-      TagState::Changed(new)
-    };
+#[derive(Clone, Default, Debug)]
+pub struct Editable {
+  pub original: Option<String>,
+  pub state: EditableState,
+}
+
+impl Editable {
+  pub fn new(original: Option<String>) -> Self {
+    Self {
+      original,
+      state: EditableState::default(),
+    }
+  }
+  pub fn edit(&mut self, new: String) {
+    self.state = EditableState::compare(self.original.as_ref(), new);
+  }
+  pub fn changed(&self) -> bool {
+    match &self.state {
+      EditableState::Unchanged => false,
+      _ => true,
+    }
   }
 }
 
-#[derive(Clone)]
+impl fmt::Display for Editable {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let current = match &self.state {
+      EditableState::Unchanged => self.original.clone(),
+      EditableState::Changed(v) => Some(v.clone()),
+      EditableState::Removed => None,
+    };
+    write!(f, "{}", current.unwrap_or_default())
+  }
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct EditableTag(pub Editable);
+
+#[derive(Clone, Default, Debug)]
+pub struct LyricsEditableTag {
+  pub lang: Editable,
+  pub desc: Editable,
+  pub text: Editable,
+}
+
+impl LyricsEditableTag {
+  pub fn new(lyrics: Option<Lyrics>) -> Self {
+    Self {
+      lang: Editable::new(lyrics.as_ref().map(|l| l.lang.clone())),
+      desc: Editable::new(lyrics.as_ref().map(|l| l.description.clone())),
+      text: Editable::new(lyrics.map(|l| l.text.clone())),
+    }
+  }
+}
+
+#[derive(Clone, Debug)]
 pub struct SongTags {
-  pub name: EditableTag<String>,
-  pub artist: EditableTag<String>,
-  pub year: EditableTag<String>,
-  pub genre: EditableTag<String>,
-  pub lyrics: EditableTag<Lyrics>,
+  pub title: EditableTag,
+  pub artist: EditableTag,
+  pub year: EditableTag,
+  pub genre: EditableTag,
+  pub lyrics: LyricsEditableTag,
 }
 
 impl SongTags {
   pub fn new(path: String) -> Self {
     let tag = Tag::read_from_path(path).unwrap();
     Self {
-      name: EditableTag::new(tag.title().map(|n| n.into())),
-      artist: EditableTag::new(tag.artist().map(|a| a.into())),
-      year: EditableTag::new(tag.year().map(|y| y.to_string())),
-      genre: EditableTag::new(tag.genre().map(|g| g.to_string())),
-      lyrics: EditableTag::new({
+      title: EditableTag(Editable::new(tag.title().map(|n| n.into()))),
+      artist: EditableTag(Editable::new(tag.artist().map(|a| a.into()))),
+      year: EditableTag(Editable::new(tag.year().map(|y| y.to_string()))),
+      genre: EditableTag(Editable::new(tag.genre().map(|g| g.to_string()))),
+      lyrics: LyricsEditableTag::new({
         let l = tag.lyrics().next().cloned();
         l
       }),
@@ -105,9 +127,9 @@ impl SongTags {
 
 pub struct State {
   pub running: bool,
-  search: String,
+  pub search: String,
   pub found_mp3_files: Vec<Mp3File>,
-  pub selected_song: Option<SongTags>,
+  // pub selected_song_index: Option<usize>,
 }
 
 impl State {
@@ -123,6 +145,7 @@ impl State {
           self.find_mp3_files(path.into());
         } else if path.extension().map_or(false, |ext| ext == "mp3") {
           self.found_mp3_files.push(Mp3File {
+            tags: SongTags::new(path.to_str().unwrap().into()),
             name: entry.file_name().to_str().unwrap().into(),
             path: path.to_str().unwrap().to_string().replace("\\", "/"),
             modified_date: {
@@ -149,9 +172,9 @@ impl App {
         running: true,
         search: "".into(),
         found_mp3_files: vec![],
-        selected_song: None,
+        // selected_song_index: None,
       },
-      ui: Ui::new(),
+      ui: Ui::new(None),
     };
     dirs::download_dir().map(|dir| app.state.find_mp3_files(dir));
     dirs::audio_dir().map(|dir| app.state.find_mp3_files(dir));
@@ -170,29 +193,29 @@ impl App {
   }
   fn save_tags(path: impl AsRef<Path>, new_tags: SongTags) {
     let mut tags = Tag::new();
-    match new_tags.name.state {
-      TagState::Changed(name) => {
+    match new_tags.title.0.state {
+      EditableState::Changed(name) => {
         tags.set_title(name);
       }
-      TagState::Removed => {
+      EditableState::Removed => {
         tags.remove_title();
       }
       _ => {}
     }
-    match new_tags.artist.state {
-      TagState::Changed(artist) => {
+    match new_tags.artist.0.state {
+      EditableState::Changed(artist) => {
         tags.set_artist(artist);
       }
-      TagState::Removed => {
+      EditableState::Removed => {
         tags.remove_artist();
       }
       _ => {}
     }
-    match new_tags.year.state {
-      TagState::Changed(year) => {
+    match new_tags.year.0.state {
+      EditableState::Changed(year) => {
         tags.set_year(year.parse().unwrap_or(0));
       }
-      TagState::Removed => {
+      EditableState::Removed => {
         tags.remove_year();
       }
       _ => {}

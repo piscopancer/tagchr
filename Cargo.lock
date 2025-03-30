@@ -809,6 +809,7 @@ dependencies = [
 name = "tagchr"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "chrono",
  "crossterm",
  "dirs",
