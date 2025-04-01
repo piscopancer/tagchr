@@ -20,20 +20,33 @@ lyrics button needs TagWidget and it will highlight "edit" when lyrics tag is ch
 
 # todo
 
-- differentiate between `Input` and `TextArea`, maybe using builder pattern on `TextArea` - `.single_line()`.
-- those inputs that implement selectable must hide cursos when not selected alongside highlighting borders
-<!-- - impl iter next and prev logic for selectable elements enums (cannot do it on selectable enums themselfves, may wrap in a struct `Selection`) -->
+- singleton pattern for ui and state lol
+- arrows in text areas not working
+- maybe implement Widget/render for input
+- `crossterm` -> `termion` for x2 performance
 - use modules to encapsulate movement between sections. will be useful for side-effects (when ctrl-down into table should also put text into inputs, cannot change sections just by modifying app state bcs it's not enough)
-- if input text was highlighted (meaning changed happened), selecting another song does not reset it
-- search bar not working
-- use hashmap to store screens by enum and generic trait (for unwrapping during compilation)
-<!-- - (maybe) `TagInput(TextArea)` that changes tag that does field editing and highlighting on its own to avoid duplication -->
-- after selecting another song with arrow keys, text highlight should be auto removed
-- trait `TagWidget` and structs `TagInput`/`TagButton` (for lyrics), still too generic, idk if i need this abstraction
+- add header/footer with shortcuts or help display
 
 <!-- -->
 
 # ideas
+
+## handling key events
+
+reading key inputs is solely a feature of ui, not app state.
+
+the idea is that key must be handled differently based on the ui state. normally i want different handling when there are different elements on the screen, which probably means it's better to match on ui state going with approach #0.
+
+i currently consider these approaches
+
+0. matching on screen and providing keys, basically (mainly) making screens -> sections -> elements responsible for handling key events. additionally read bools from ui state or screens to decide whether screen/section/element match should be triggered
+1. matching on keys and then reading conditions using if else
+2. return key event if it had no match so that the parent can handle it
+3. firstly, key event is handled by blocking ui elements like popups, if . secondly, it's given to the current screen like home/lyrics. there's no other sitatuion.
+
+- when pressing escape while popup is active, the latest popup (there will be a vec of them) is given keys events to handle. (specific impls of popup, btw). the popup, dep on its impl either closes or does nothing about it, leaving the screen unaware of the key event at all. blocking ui elements can appear anywhere despite current screen, they are global so they must act the first. i can have a separate vec of blocking els in this order of importance: popups -> toasts
+- when lyrics screens is current, escape only returns to home screen, meanwhile escape on home exits the app.
+- some actions will be more important than the other, so i need to use `match` and think of the order of matches + use `if` checks for additional check. for example when on lyrics screen, i should first check
 
 ## editable tags
 

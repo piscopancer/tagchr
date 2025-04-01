@@ -13,6 +13,6 @@ id3 = "1.16.2"
 jiff = "0.2.5"
 kinded = "0.3.0"
 pretty_date = "0.1.2"
-ratatui = "0.29.0"
+ratatui = { version = "0.29.0" }
 tui-textarea = "0.7.0"
 uuid = { version = "1.16.0", features = ["v4"] }
