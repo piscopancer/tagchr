@@ -161,7 +161,7 @@ impl Screen for LyricsScreen {
   }
   fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Option<UiCommand> {
     match (key_event.code, key_event.modifiers) {
-      (KeyCode::Esc, _) => Some(UiCommand::Navigate(ui_enums::ScreenKind::Home)),
+      (KeyCode::Esc, _) => Some(UiCommand::ChangeScreen(ui_enums::ScreenKind::Home)),
       (KeyCode::PageUp, _) | (KeyCode::Up, KeyModifiers::CONTROL) => {
         self.focused_el = match self.focused_el {
           FocusedElement::Lang => FocusedElement::Text,

@@ -11,9 +11,15 @@ use ratatui::{
 use tui_textarea::TextArea;
 use crate::app::{ app::{ App, State }, tag::SongTags };
 use super::{
-  modal::Modals,
+  modals::modal::{ enums::Modal, Modals },
   screens::{ home::{ self, screen::HomeScreen }, lyrics::screen::LyricsScreen },
 };
+
+pub enum UiCommand {
+  ChangeScreen(ui_enums::ScreenKind),
+  OpenModal(Modal),
+  CloseLastModal,
+}
 
 pub mod ui_enums {
   use kinded::Kinded;
@@ -24,10 +30,6 @@ pub mod ui_enums {
     Home(HomeScreen),
     Lyrics(LyricsScreen),
   }
-}
-
-pub enum UiCommand {
-  Navigate(ui_enums::ScreenKind),
 }
 
 pub struct Ui {
@@ -57,7 +59,9 @@ impl Ui {
       }
       // draw modals after screens bcs they need to sit on top
       for modal in self.modals.iter() {
-        frame.render_widget(modal, frame.area());
+        // modal
+        modal.render_ref(frame.area(), frame.buffer_mut());
+        // frame.render_widget(modal, frame.area());
       }
     });
   }
@@ -99,8 +103,12 @@ impl Ui {
   }
   fn handle_command(&mut self, cmd: UiCommand, state: &mut State) {
     match cmd {
-      UiCommand::Navigate(screen) => {
+      UiCommand::ChangeScreen(screen) => {
         self.navigate(screen, state);
+      }
+      UiCommand::OpenModal(modal) => todo!(),
+      UiCommand::CloseLastModal => {
+        self.modals.close_last();
       }
     }
   }
@@ -110,10 +118,11 @@ impl Ui {
   pub fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) {
     match (key_event.code, key_event.modifiers) {
       (code, modifiers) => {
-        // TODO: popups/dialogues handling here
-        // end iter if
         if let Some(modal) = self.modals.last() {
-          // modal.handle_key_event(key_event, state);
+          if let Some(cmd) = modal.handle_key_event(key_event, state) {
+            self.handle_command(cmd, state);
+          }
+          return;
         }
         match &mut self.screen {
           ui_enums::Screen::Home(screen) => {

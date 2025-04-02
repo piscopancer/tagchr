@@ -11,7 +11,7 @@ use humantime::format_duration;
 use id3::{ frame::Lyrics, Tag, TagLike };
 use pretty_date::pretty_date_formatter::PrettyDateFormatter;
 use ratatui::{ prelude::{ Backend, CrosstermBackend }, Terminal };
-use crate::ui::ui::Ui;
+use crate::ui::{ ui::Ui, ui_enums };
 use super::tag::SongTags;
 
 #[derive(Debug, Clone)]

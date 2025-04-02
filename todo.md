@@ -26,12 +26,22 @@ lyrics button needs TagWidget and it will highlight "edit" when lyrics tag is ch
 - singleton pattern for ui and state lol
 - arrows in text areas not working
 - maybe implement Widget/render for input
-- `crossterm` -> `termion` for x2 performance
 - use modules to encapsulate movement between sections. will be useful for side-effects (when ctrl-down into table should also put text into inputs, cannot change sections just by modifying app state bcs it's not enough)
 
 <!-- -->
 
 # ideas
+
+## modals
+
+- different rects depending of the type (`Help`/`SaveSong`).
+- must be different structs, `Help` handles does not have options so it does not handle arrow keys. `SaveSong` however has options (save/cancel) so it handles appropriate keys including arrows, s and c.
+- trait `ModalWithOptions` with default impl for `option(option)`, `next`, `prev`
+- modals are part of ui so they can modify state without any problem, so they must be provided with the `state` to mutate somehow
+
+## event driven communication
+
+state wants to recieve events from whatever elements are there below
 
 ## handling key events
 

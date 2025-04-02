@@ -18,9 +18,10 @@ use crate::{
     lyrics::screen::LyricsScreen,
     shortcut::Shortcut,
     text_area::TextAreaTrait,
-    ui::{ ui_enums, Screen, Ui, UiCommand },
+    ui::{ ui_enums, Screen, Ui },
     widget::{ FocusableWidget, WidgetWithEditableContent },
     StringTrait,
+    UiCommand,
     WidgetState,
   },
 };
@@ -482,7 +483,7 @@ impl Screen for HomeScreen {
           Focusable::Editor(i, editor_section) => {
             match editor_section {
               EditorFocusable::LyricsButton => {
-                Some(UiCommand::Navigate(ui_enums::ScreenKind::Lyrics))
+                Some(UiCommand::ChangeScreen(ui_enums::ScreenKind::Lyrics))
               }
               _ => None,
             }
