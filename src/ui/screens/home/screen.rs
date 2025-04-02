@@ -3,7 +3,7 @@ use id3::TagLike;
 use ratatui::{
   buffer::Buffer,
   layout::{ Constraint, Flex, Layout, Rect },
-  style::{ Style, Styled, Stylize },
+  style::{ Color, Style, Styled, Stylize },
   text::{ Line, Span },
   widgets::{ block::Title, Block, BorderType, Cell, List, Paragraph, Row, Table, Widget },
   Frame,
@@ -11,7 +11,7 @@ use ratatui::{
 use tui_textarea::TextArea;
 use uuid::Uuid;
 use crate::{
-  app::app::{ App, Editable, EditableState, LyricsEditableTag, SongTags, State },
+  app::app::{ App, State },
   info::{ PROJECT_DESC, PROJECT_NAME },
   ui::{
     block::BlockTrait,
@@ -65,12 +65,14 @@ impl HomeScreen {
 
 impl Screen for HomeScreen {
   fn draw(&mut self, frame: &mut Frame, state: &State) {
-    let github_shortcut = Shortcut::new("Ctrl+G", "Github");
-    let help_shortcut = Shortcut::new("Ctrl+H", "Help");
+    let github_shortcut = Shortcut::new("Ctrl+G", "Github", Color::DarkGray);
+    let help_shortcut = Shortcut::new("Ctrl+H", "Help", Color::DarkGray);
+    let save_shortcut = Shortcut::new("Ctrl+S", "Save", Color::Yellow);
 
-    let [header_area, main_area] = Layout::vertical([
+    let [header_area, main_area, footer_area] = Layout::vertical([
       Constraint::Length(1),
       Constraint::Fill(1),
+      Constraint::Length(1),
     ]).areas(frame.area());
     let hor_l = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]);
     let [sidebar_area, editor_area] = hor_l.areas(main_area);
@@ -216,7 +218,7 @@ impl Screen for HomeScreen {
         _ => false,
       },
       song_tags.is_some(),
-      song_tags.map(|t| t.title.0.changed()).unwrap_or_default()
+      song_tags.map(|t| t.title.0.edited()).unwrap_or_default()
     );
 
     rerender_tag_input(
@@ -234,7 +236,7 @@ impl Screen for HomeScreen {
         _ => false,
       },
       song_tags.is_some(),
-      song_tags.map(|t| t.artist.0.changed()).unwrap_or_default()
+      song_tags.map(|t| t.artist.0.edited()).unwrap_or_default()
     );
 
     rerender_tag_input(
@@ -252,7 +254,7 @@ impl Screen for HomeScreen {
         _ => false,
       },
       song_tags.is_some(),
-      song_tags.map(|t| t.genre.0.changed()).unwrap_or_default()
+      song_tags.map(|t| t.genre.0.edited()).unwrap_or_default()
     );
 
     rerender_tag_input(
@@ -270,7 +272,7 @@ impl Screen for HomeScreen {
         _ => false,
       },
       song_tags.is_some(),
-      song_tags.map(|t| t.year.0.changed()).unwrap_or_default()
+      song_tags.map(|t| t.year.0.edited()).unwrap_or_default()
     );
 
     let mut lyrics_button = Paragraph::new(
@@ -284,8 +286,7 @@ impl Screen for HomeScreen {
               WidgetState::Highlighted,
               song_tags
                 .map(
-                  |t|
-                    t.lyrics.lang.changed() || t.lyrics.desc.changed() || t.lyrics.text.changed()
+                  |t| (t.lyrics.lang.edited() || t.lyrics.desc.edited() || t.lyrics.text.edited())
                 )
                 .unwrap_or_default()
             );
@@ -319,7 +320,7 @@ impl Screen for HomeScreen {
     // let debug_p = Paragraph::new(
     //   vec![Line::from(format!("sec [{:?}] ", self.focused_el))]
     // ).light_magenta();
-    let header_main_line = Line::from(
+    let header_line = Line::from(
       Vec::from([
         Span::from("[ ").dark_gray(),
         Span::from(PROJECT_NAME),
@@ -327,16 +328,17 @@ impl Screen for HomeScreen {
       ])
     );
 
-    let header_right_line = Line::from(
+    let footer_line = Line::from(
       Vec::from([
+        save_shortcut.to_spans(),
+        Vec::from([Span::from(" :: ").dark_gray()]),
         help_shortcut.to_spans(),
         Vec::from([Span::from(" :: ").dark_gray()]),
         github_shortcut.to_spans(),
       ]).concat()
     ).right_aligned();
 
-    frame.render_widget(&header_main_line, header_area);
-    frame.render_widget(&header_right_line, header_area);
+    frame.render_widget(&header_line, header_area);
     frame.render_widget(&self.search_input, search_area);
     frame.render_widget(&files_table, table_area);
     frame.render_widget(&table_title_file, table_title_file_area);
@@ -347,6 +349,7 @@ impl Screen for HomeScreen {
     frame.render_widget(&self.year_input, year_input_area);
     frame.render_widget(&self.genre_input, genre_input_area);
     frame.render_widget(&lyrics_button, lyrics_button_area);
+    frame.render_widget(&footer_line, footer_area);
   }
 
   fn handle_key_event<'a>(

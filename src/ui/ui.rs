@@ -9,8 +9,11 @@ use ratatui::{
   Terminal,
 };
 use tui_textarea::TextArea;
-use crate::app::app::{ App, SongTags, State };
-use super::{ screens::{ home::{ self, screen::HomeScreen }, lyrics::screen::LyricsScreen } };
+use crate::app::{ app::{ App, State }, tag::SongTags };
+use super::{
+  modal::Modals,
+  screens::{ home::{ self, screen::HomeScreen }, lyrics::screen::LyricsScreen },
+};
 
 pub mod ui_enums {
   use kinded::Kinded;
@@ -29,6 +32,7 @@ pub enum UiCommand {
 
 pub struct Ui {
   term: Terminal<CrosstermBackend<Stdout>>,
+  pub modals: Modals,
   pub screen: ui_enums::Screen,
 }
 
@@ -36,18 +40,24 @@ impl Ui {
   pub fn new() -> Self {
     Self {
       term: ratatui::init(),
+      modals: Modals::new(),
       screen: ui_enums::Screen::Home(HomeScreen::new(home::screen::Focusable::Search)),
     }
   }
   pub fn draw(&mut self, state: &mut State) {
     self.term.draw(|frame| {
       match &mut self.screen {
+        // TODO: impl Widget for screens even though they are just holders for actual widgets? may not make sense tbh
         ui_enums::Screen::Home(screen) => {
           screen.draw(frame, state);
         }
         ui_enums::Screen::Lyrics(screen) => {
           screen.draw(frame, state);
         }
+      }
+      // draw modals after screens bcs they need to sit on top
+      for modal in self.modals.iter() {
+        frame.render_widget(modal, frame.area());
       }
     });
   }
@@ -101,7 +111,10 @@ impl Ui {
     match (key_event.code, key_event.modifiers) {
       (code, modifiers) => {
         // TODO: popups/dialogues handling here
-        // TODO: toasts handling here
+        // end iter if
+        if let Some(modal) = self.modals.last() {
+          // modal.handle_key_event(key_event, state);
+        }
         match &mut self.screen {
           ui_enums::Screen::Home(screen) => {
             if let Some(cmd) = screen.handle_key_event(key_event, state) {

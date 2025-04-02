@@ -20,12 +20,14 @@ lyrics button needs TagWidget and it will highlight "edit" when lyrics tag is ch
 
 # todo
 
+- add help modal with ...
+- display `save` shortcut and allow saving only if song was `edited`
+- show in table using yellow if song has been `edited`
 - singleton pattern for ui and state lol
 - arrows in text areas not working
 - maybe implement Widget/render for input
 - `crossterm` -> `termion` for x2 performance
 - use modules to encapsulate movement between sections. will be useful for side-effects (when ctrl-down into table should also put text into inputs, cannot change sections just by modifying app state bcs it's not enough)
-- add header/footer with shortcuts or help display
 
 <!-- -->
 
@@ -33,7 +35,7 @@ lyrics button needs TagWidget and it will highlight "edit" when lyrics tag is ch
 
 ## handling key events
 
-reading key inputs is solely a feature of ui, not app state.
+reading key inputs is solely a feature of ui, not app state. however, match on key events must be done with `state` only, not `ui`, that's bcs `ui` is already in sync with `state` allowing to interact with the `state` in a way that `state` allows, if not, `ui` has issues
 
 the idea is that key must be handled differently based on the ui state. normally i want different handling when there are different elements on the screen, which probably means it's better to match on ui state going with approach #0.
 

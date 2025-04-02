@@ -12,6 +12,7 @@ use id3::{ frame::Lyrics, Tag, TagLike };
 use pretty_date::pretty_date_formatter::PrettyDateFormatter;
 use ratatui::{ prelude::{ Backend, CrosstermBackend }, Terminal };
 use crate::ui::ui::Ui;
+use super::tag::SongTags;
 
 #[derive(Debug, Clone)]
 pub struct Mp3File {
@@ -19,113 +20,6 @@ pub struct Mp3File {
   pub path: String,
   pub modified_date: String,
   pub tags: SongTags,
-}
-
-#[derive(Clone, Default, Debug)]
-pub enum EditableState {
-  #[default]
-  Unchanged,
-  Changed(String),
-  Removed,
-}
-
-impl EditableState {
-  fn compare(original: Option<&String>, new: String) -> Self {
-    if let Some(original) = original {
-      if *original == new {
-        EditableState::Unchanged
-      } else if new.chars().count() == 0 {
-        EditableState::Removed
-      } else {
-        EditableState::Changed(new)
-      }
-    } else {
-      if new.chars().count() == 0 { EditableState::Unchanged } else { EditableState::Changed(new) }
-    }
-  }
-}
-
-#[derive(Clone, Default, Debug)]
-pub struct Editable {
-  pub original: Option<String>,
-  pub state: EditableState,
-}
-
-impl Editable {
-  pub fn new(original: Option<String>) -> Self {
-    Self {
-      original,
-      state: EditableState::default(),
-    }
-  }
-  pub fn edit(&mut self, new: String) {
-    self.state = EditableState::compare(self.original.as_ref(), new);
-  }
-  pub fn reset(&mut self) {
-    self.state = EditableState::Unchanged;
-  }
-  pub fn changed(&self) -> bool {
-    match &self.state {
-      EditableState::Unchanged => false,
-      _ => true,
-    }
-  }
-}
-
-impl fmt::Display for Editable {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let current = match &self.state {
-      EditableState::Unchanged => self.original.clone(),
-      EditableState::Changed(v) => Some(v.clone()),
-      EditableState::Removed => None,
-    };
-    write!(f, "{}", current.unwrap_or_default())
-  }
-}
-
-#[derive(Clone, Default, Debug)]
-pub struct EditableTag(pub Editable);
-
-#[derive(Clone, Default, Debug)]
-pub struct LyricsEditableTag {
-  pub lang: Editable,
-  pub desc: Editable,
-  pub text: Editable,
-}
-
-impl LyricsEditableTag {
-  pub fn new(lyrics: Option<Lyrics>) -> Self {
-    Self {
-      lang: Editable::new(lyrics.as_ref().map(|l| l.lang.clone())),
-      desc: Editable::new(lyrics.as_ref().map(|l| l.description.clone())),
-      text: Editable::new(lyrics.map(|l| l.text.clone())),
-    }
-  }
-}
-
-#[derive(Clone, Debug)]
-pub struct SongTags {
-  pub title: EditableTag,
-  pub artist: EditableTag,
-  pub year: EditableTag,
-  pub genre: EditableTag,
-  pub lyrics: LyricsEditableTag,
-}
-
-impl SongTags {
-  pub fn new(path: String) -> Self {
-    let tag = Tag::read_from_path(path).unwrap();
-    Self {
-      title: EditableTag(Editable::new(tag.title().map(|n| n.into()))),
-      artist: EditableTag(Editable::new(tag.artist().map(|a| a.into()))),
-      year: EditableTag(Editable::new(tag.year().map(|y| y.to_string()))),
-      genre: EditableTag(Editable::new(tag.genre().map(|g| g.to_string()))),
-      lyrics: LyricsEditableTag::new({
-        let l = tag.lyrics().next().cloned();
-        l
-      }),
-    }
-  }
 }
 
 pub struct State {
@@ -225,36 +119,5 @@ impl App {
         _ => {}
       }
     }
-  }
-  fn save_tags(path: impl AsRef<Path>, new_tags: SongTags) {
-    let mut tags = Tag::new();
-    match new_tags.title.0.state {
-      EditableState::Changed(name) => {
-        tags.set_title(name);
-      }
-      EditableState::Removed => {
-        tags.remove_title();
-      }
-      _ => {}
-    }
-    match new_tags.artist.0.state {
-      EditableState::Changed(artist) => {
-        tags.set_artist(artist);
-      }
-      EditableState::Removed => {
-        tags.remove_artist();
-      }
-      _ => {}
-    }
-    match new_tags.year.0.state {
-      EditableState::Changed(year) => {
-        tags.set_year(year.parse().unwrap_or(0));
-      }
-      EditableState::Removed => {
-        tags.remove_year();
-      }
-      _ => {}
-    }
-    tags.write_to_path(path, id3::Version::Id3v24);
   }
 }

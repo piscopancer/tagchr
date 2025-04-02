@@ -2,14 +2,14 @@ use crossterm::event::{ KeyCode, KeyEvent, KeyModifiers };
 use id3::frame::Lyrics;
 use ratatui::{
   layout::{ Constraint, Layout },
-  style::{ Style, Stylize },
+  style::{ Color, Style, Stylize },
   text::{ Line, Span },
   widgets::{ Block, BorderType, Paragraph },
   Frame,
 };
 use tui_textarea::TextArea;
 use crate::{
-  app::app::{ App, Editable, LyricsEditableTag, SongTags, State },
+  app::{ app::{ App, State }, tag::LyricsEditableTag },
   ui::{
     block::BlockTrait,
     home::{ self, screen::HomeScreen },
@@ -88,7 +88,7 @@ impl Screen for LyricsScreen {
         Style::from({
           let mut ws = WidgetState::empty();
           ws.insert(WidgetState::Enabled);
-          ws.set(WidgetState::Highlighted, self.lyrics.lang.changed());
+          ws.set(WidgetState::Highlighted, self.lyrics.lang.edited());
           ws
         })
       );
@@ -111,7 +111,7 @@ impl Screen for LyricsScreen {
         Style::from({
           let mut ws = WidgetState::empty();
           ws.insert(WidgetState::Enabled);
-          ws.set(WidgetState::Highlighted, self.lyrics.desc.changed());
+          ws.set(WidgetState::Highlighted, self.lyrics.desc.edited());
           ws
         })
       );
@@ -137,7 +137,7 @@ impl Screen for LyricsScreen {
         Style::from({
           let mut ws = WidgetState::empty();
           ws.insert(WidgetState::Enabled);
-          ws.set(WidgetState::Highlighted, self.lyrics.text.changed());
+          ws.set(WidgetState::Highlighted, self.lyrics.text.edited());
           ws
         })
       );
@@ -146,12 +146,12 @@ impl Screen for LyricsScreen {
     let footer_par = Paragraph::new(
       Line::from(
         [
-          Shortcut::new("Esc", "Back").to_spans(),
+          Shortcut::new("Esc", "Back", Color::Gray).to_spans(),
           Vec::from([Span::from(" :: ").dark_gray()]),
-          Shortcut::new("Ctrl+R", "Reset field").to_spans(),
+          Shortcut::new("Ctrl+R", "Reset field", Color::Gray).to_spans(),
         ].concat()
       )
-    ).centered();
+    ).right_aligned();
 
     frame.render_widget(&header_par, header_area);
     frame.render_widget(&self.lang_input, lang_area);
