@@ -117,7 +117,7 @@ impl SongTags {
       self.lyrics.desc.edited() ||
       self.lyrics.text.edited()
   }
-  pub fn save(&mut self) {
+  pub fn save(&mut self) -> Result<(), String> {
     let mut tags = Tag::new();
     match &self.title.0.state {
       EditableState::Unchanged => {
@@ -195,12 +195,10 @@ impl SongTags {
     let write_res = tags.write_to_path(self.song_path.clone(), id3::Version::Id3v24);
     match write_res {
       Ok(_) => {
-        // show success modal
         *self = Self::new(self.song_path.clone());
+        Ok(())
       }
-      Err(e) => {
-        // show error modal + error msg
-      }
+      Err(e) => { Err(e.description) }
     }
   }
 }

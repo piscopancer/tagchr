@@ -106,7 +106,9 @@ impl Ui {
       UiCommand::ChangeScreen(screen) => {
         self.navigate(screen, state);
       }
-      UiCommand::OpenModal(modal) => todo!(),
+      UiCommand::OpenModal(modal) => {
+        self.modals.open(modal);
+      }
       UiCommand::CloseLastModal => {
         self.modals.close_last();
       }
@@ -119,19 +121,19 @@ impl Ui {
     match (key_event.code, key_event.modifiers) {
       (code, modifiers) => {
         if let Some(modal) = self.modals.last() {
-          if let Some(cmd) = modal.handle_key_event(key_event, state) {
+          for cmd in modal.handle_key_event(key_event, state) {
             self.handle_command(cmd, state);
           }
           return;
         }
         match &mut self.screen {
           ui_enums::Screen::Home(screen) => {
-            if let Some(cmd) = screen.handle_key_event(key_event, state) {
+            for cmd in screen.handle_key_event(key_event, state) {
               self.handle_command(cmd, state);
             }
           }
           ui_enums::Screen::Lyrics(screen) => {
-            if let Some(cmd) = screen.handle_key_event(key_event, state) {
+            for cmd in screen.handle_key_event(key_event, state) {
               self.handle_command(cmd, state);
             }
           }
@@ -143,7 +145,7 @@ impl Ui {
 
 pub trait Screen {
   fn draw(&mut self, frame: &mut Frame, state: &State);
-  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Option<UiCommand>;
+  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand>;
 }
 
 bitflags! {

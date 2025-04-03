@@ -34,6 +34,7 @@ lyrics button needs TagWidget and it will highlight "edit" when lyrics tag is ch
 
 ## modals
 
+- probably turn modals into enum and iterate over them to spawn
 - different rects depending of the type (`Help`/`SaveSong`).
 - must be different structs, `Help` handles does not have options so it does not handle arrow keys. `SaveSong` however has options (save/cancel) so it handles appropriate keys including arrows, s and c.
 - trait `ModalWithOptions` with default impl for `option(option)`, `next`, `prev`

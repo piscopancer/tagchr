@@ -8,7 +8,7 @@ use ratatui::{
   Frame,
 };
 use crate::{ app::app::State, ui::UiCommand };
-use super::{ help::HelpModal, save_tags::ConfirmSaveTagsModal };
+use super::{ help::HelpModal, save_result::SaveResultModal, save_tags::ConfirmSaveTagsModal };
 
 pub mod enums {
   pub enum Modal {
@@ -16,7 +16,7 @@ pub mod enums {
       index: usize,
       song_title: String,
     },
-    SaveResult(Result<String, String>),
+    SaveResult(Result<(), String>),
     Help,
   }
 }
@@ -42,16 +42,24 @@ impl ModalOptions {
   pub fn list(&self) -> &Vec<ModalOption> {
     &self.list
   }
+  pub fn list_mut(&mut self) -> &mut Vec<ModalOption> {
+    &mut self.list
+  }
   pub fn current(&self) -> usize {
     self.current
   }
+  pub fn exec_current(&mut self, state: &mut State) -> Vec<UiCommand> {
+    let i = self.current();
+    let cmd = self.list_mut()[i].exec(state);
+    cmd
+  }
 }
 
-type Action = fn(&mut State) -> Option<UiCommand>;
+type Action = Box<dyn FnMut(&mut State) -> Vec<UiCommand>>;
 
 pub struct ModalOption {
   pub desc: String,
-  pub action: Action,
+  action: Action,
 }
 
 impl ModalOption {
@@ -61,17 +69,20 @@ impl ModalOption {
       action,
     }
   }
+  pub fn exec(&mut self, state: &mut State) -> Vec<UiCommand> {
+    (self.action)(state)
+  }
 }
 
 pub trait Modal: WidgetRef {
-  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Option<UiCommand> {
+  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand> {
     match (key_event.code, key_event.modifiers) {
       (KeyCode::Esc, ..) => {
-        return Some(UiCommand::CloseLastModal);
+        return Vec::from([UiCommand::CloseLastModal]);
       }
       _ => {}
     }
-    None
+    Vec::new()
   }
 }
 
@@ -79,20 +90,25 @@ pub struct Modals(Vec<Box<dyn Modal>>);
 
 impl Modals {
   pub fn new() -> Self {
-    // Self(Vec::new());
-    let mut new = Self(Vec::new());
-    new.open(enums::Modal::Save {
-      index: 0,
-      song_title: "SUCK ME".into(),
-    });
-    new
+    // TODO: remove debug
+    let debug = false;
+    if debug {
+      let mut new = Self(Vec::new());
+      new.open(enums::Modal::Save {
+        index: 0,
+        song_title: "SUCK ME".into(),
+      });
+      new
+    } else {
+      Self(Vec::new())
+    }
   }
   pub fn open(&mut self, modal: enums::Modal) {
     self.0.push(match modal {
       enums::Modal::Help => Box::new(HelpModal),
       enums::Modal::Save { index, song_title } =>
         Box::new(ConfirmSaveTagsModal::new(index, song_title)),
-      enums::Modal::SaveResult(_) => todo!(),
+      enums::Modal::SaveResult(_) => Box::new(SaveResultModal),
     });
   }
   pub fn iter(&self) -> impl Iterator<Item = &Box<dyn Modal>> {

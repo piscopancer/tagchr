@@ -159,16 +159,17 @@ impl Screen for LyricsScreen {
     frame.render_widget(&self.text_input, text_area);
     frame.render_widget(&footer_par, footer_area);
   }
-  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Option<UiCommand> {
+  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand> {
     match (key_event.code, key_event.modifiers) {
-      (KeyCode::Esc, _) => Some(UiCommand::ChangeScreen(ui_enums::ScreenKind::Home)),
+      (KeyCode::Esc, _) => {
+        return Vec::from([UiCommand::ChangeScreen(ui_enums::ScreenKind::Home)]);
+      }
       (KeyCode::PageUp, _) | (KeyCode::Up, KeyModifiers::CONTROL) => {
         self.focused_el = match self.focused_el {
           FocusedElement::Lang => FocusedElement::Text,
           FocusedElement::Desc => FocusedElement::Lang,
           FocusedElement::Text => FocusedElement::Desc,
         };
-        None
       }
       (KeyCode::PageDown, _) | (KeyCode::Down, KeyModifiers::CONTROL) => {
         self.focused_el = match self.focused_el {
@@ -176,7 +177,6 @@ impl Screen for LyricsScreen {
           FocusedElement::Desc => FocusedElement::Text,
           FocusedElement::Text => FocusedElement::Lang,
         };
-        None
       }
       (KeyCode::Char('r' | 'к'), KeyModifiers::CONTROL) => {
         match self.focused_el {
@@ -184,7 +184,6 @@ impl Screen for LyricsScreen {
           FocusedElement::Desc => self.lyrics.desc.reset(),
           FocusedElement::Text => self.lyrics.text.reset(),
         }
-        None
       }
       _ => {
         match self.focused_el {
@@ -204,8 +203,8 @@ impl Screen for LyricsScreen {
             }
           }
         }
-        return None;
       }
     }
+    Vec::new()
   }
 }

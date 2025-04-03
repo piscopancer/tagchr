@@ -7,7 +7,7 @@ use ratatui::{
   widgets::{ Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, Widget, WidgetRef },
 };
 use crate::{ app::app::State, ui::UiCommand };
-use super::modal::{ Modal, ModalOption, ModalOptions };
+use super::modal::{ self, Modal, ModalOption, ModalOptions };
 
 pub struct ConfirmSaveTagsModal {
   index: usize,
@@ -21,21 +21,30 @@ impl ConfirmSaveTagsModal {
       index,
       song_title: song_title.into(),
       options: ModalOptions::new([
-        ModalOption::new("Save", |s| {
-          s.searched_mp3_files[index].tags.save();
-          None
-        }),
-        ModalOption::new("Cancel", |s| { None }),
+        ModalOption::new(
+          "Save",
+          Box::new(move |state| {
+            let res = state.searched_mp3_files[index].tags.save();
+            Vec::from([
+              UiCommand::CloseLastModal,
+              UiCommand::OpenModal(modal::enums::Modal::SaveResult(res)),
+            ])
+          })
+        ),
+        ModalOption::new(
+          "Cancel",
+          Box::new(|state| Vec::from([UiCommand::CloseLastModal]))
+        ),
       ]),
     }
   }
 }
 
 impl Modal for ConfirmSaveTagsModal {
-  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Option<UiCommand> {
+  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand> {
     match (key_event.code, key_event.modifiers) {
       (KeyCode::Esc, ..) => {
-        return Some(UiCommand::CloseLastModal);
+        return Vec::from([UiCommand::CloseLastModal]);
       }
       (KeyCode::Left, ..) => {
         self.options.prev();
@@ -44,19 +53,18 @@ impl Modal for ConfirmSaveTagsModal {
         self.options.next();
       }
       (KeyCode::Enter, ..) => {
-        (self.options.list()[self.options.current()].action)(state);
-        return Some(UiCommand::CloseLastModal);
+        let cmd = self.options.exec_current(state);
+        // TODO: return sequence of commands
+        // return [close last modal, cmd]
+        return cmd;
       }
       (KeyCode::Char('s' | 'с'), ..) => {
-        (self.options.list()[0].action)(state);
-        return Some(UiCommand::CloseLastModal);
-      }
-      (KeyCode::Right, ..) => {
-        return Some(UiCommand::CloseLastModal);
+        let cmd = self.options.list_mut()[0].exec(state);
+        return cmd;
       }
       _ => {}
     }
-    None
+    Vec::new()
   }
 }
 

@@ -16,6 +16,7 @@ use crate::{
   ui::{
     block::BlockTrait,
     lyrics::screen::LyricsScreen,
+    modals::modal,
     shortcut::Shortcut,
     text_area::TextAreaTrait,
     ui::{ ui_enums, Screen, Ui },
@@ -331,8 +332,12 @@ impl Screen for HomeScreen {
 
     let footer_line = Line::from(
       Vec::from([
-        save_shortcut.to_spans(),
-        Vec::from([Span::from(" :: ").dark_gray()]),
+        if song_tags.is_some_and(|t| t.edited()) { save_shortcut.to_spans() } else { Vec::new() },
+        if song_tags.is_some_and(|t| t.edited()) {
+          Vec::from([Span::from(" :: ").dark_gray()])
+        } else {
+          Vec::new()
+        },
         help_shortcut.to_spans(),
         Vec::from([Span::from(" :: ").dark_gray()]),
         github_shortcut.to_spans(),
@@ -357,43 +362,43 @@ impl Screen for HomeScreen {
     &'a mut self,
     key_event: KeyEvent,
     state: &'a mut State
-  ) -> Option<UiCommand> {
+  ) -> Vec<UiCommand> {
+    let song = match &self.focused_el {
+      Focusable::Table(i) | Focusable::Editor(i, _) =>
+        Some((i, &mut state.searched_mp3_files[*i].tags)),
+      _ => None,
+    };
+    let song_index = song.as_ref().map(|s| *s.0);
+    let song_tags = song.map(|s| s.1);
     match (key_event.code, key_event.modifiers) {
       (KeyCode::Esc, _) => {
         state.running = false;
-        None
       }
       (KeyCode::PageUp, _) | (KeyCode::Up, KeyModifiers::CONTROL) => {
         match &self.focused_el {
           Focusable::Table(_) => {
             self.focused_el = Focusable::Search;
-            None
           }
           Focusable::Editor(i, editor_selection) => {
             match editor_selection {
               EditorFocusable::TitleInput => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::LyricsButton);
-                None
               }
               EditorFocusable::ArtistInput => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::TitleInput);
-                None
               }
               EditorFocusable::YearInput => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::ArtistInput);
-                None
               }
               EditorFocusable::GenreInput => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::YearInput);
-                None
               }
               EditorFocusable::LyricsButton => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::GenreInput);
-                None
               }
             }
           }
-          _ => None,
+          Focusable::Search => {}
         }
       }
       (KeyCode::Up, KeyModifiers::NONE) => {
@@ -402,52 +407,43 @@ impl Screen for HomeScreen {
             let new_i = if i > 0 { i - 1 } else { state.searched_mp3_files.len() - 1 };
             self.focused_el = Focusable::Table(new_i);
             let tags = &state.searched_mp3_files.get(new_i).unwrap().tags;
-            None
           }
-          _ => None,
+          _ => {}
         }
       }
       (KeyCode::End, _) | (KeyCode::Right, KeyModifiers::CONTROL) => {
         match &self.focused_el {
           Focusable::Table(i) => {
             self.focused_el = Focusable::Editor(*i, EditorFocusable::TitleInput);
-            None
           }
-
-          _ => None,
+          _ => {}
         }
       }
       (KeyCode::PageDown, _) | (KeyCode::Down, KeyModifiers::CONTROL) => {
         match &self.focused_el {
           Focusable::Search if !state.searched_mp3_files.is_empty() => {
             self.focused_el = Focusable::Table(0);
-            None
           }
           Focusable::Editor(i, editor_selection) => {
             match editor_selection {
               EditorFocusable::TitleInput => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::ArtistInput);
-                None
               }
               EditorFocusable::ArtistInput => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::YearInput);
-                None
               }
               EditorFocusable::YearInput => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::GenreInput);
-                None
               }
               EditorFocusable::GenreInput => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::LyricsButton);
-                None
               }
               EditorFocusable::LyricsButton => {
                 self.focused_el = Focusable::Editor(*i, EditorFocusable::TitleInput);
-                None
               }
             }
           }
-          _ => None,
+          _ => {}
         }
       }
       (KeyCode::Down, KeyModifiers::NONE) => {
@@ -455,18 +451,16 @@ impl Screen for HomeScreen {
           Focusable::Table(i) => {
             let new_i = if i == state.searched_mp3_files.len() - 1 { 0 } else { i + 1 };
             self.focused_el = Focusable::Table(new_i);
-            None
           }
-          _ => None,
+          _ => {}
         }
       }
       (KeyCode::Home, _) | (KeyCode::Left, KeyModifiers::CONTROL) => {
         match &self.focused_el {
           Focusable::Editor(i, _) => {
             self.focused_el = Focusable::Table(*i);
-            None
           }
-          _ => None,
+          _ => {}
         }
       }
       (KeyCode::Enter | KeyCode::Tab, _) if
@@ -478,25 +472,32 @@ impl Screen for HomeScreen {
         match &mut self.focused_el {
           Focusable::Table(i) => {
             self.focused_el = Focusable::Editor(*i, EditorFocusable::TitleInput);
-            None
           }
           Focusable::Editor(i, editor_section) => {
             match editor_section {
               EditorFocusable::LyricsButton => {
-                Some(UiCommand::ChangeScreen(ui_enums::ScreenKind::Lyrics))
+                Some(UiCommand::ChangeScreen(ui_enums::ScreenKind::Lyrics));
               }
-              _ => None,
+              _ => {}
             }
           }
-          _ => None,
+          _ => {}
+        }
+      }
+      (KeyCode::Char('s' | 'ы'), KeyModifiers::CONTROL) => {
+        if let Some(song_tags) = song_tags {
+          if !song_tags.edited() {
+            return Vec::new();
+          }
+          return Vec::from([
+            UiCommand::OpenModal(modal::enums::Modal::Save {
+              index: song_index.unwrap(),
+              song_title: song_tags.title.0.to_string(),
+            }),
+          ]);
         }
       }
       (KeyCode::Char('r' | 'к'), KeyModifiers::CONTROL) => {
-        let song_tags = match &self.focused_el {
-          Focusable::Table(i) | Focusable::Editor(i, _) =>
-            Some(&mut state.searched_mp3_files[*i].tags),
-          _ => None,
-        };
         match self.focused_el {
           Focusable::Search => {
             state.search = String::default();
@@ -515,7 +516,6 @@ impl Screen for HomeScreen {
           }
           _ => {}
         }
-        None
       }
       _ => {
         match &self.focused_el {
@@ -524,7 +524,6 @@ impl Screen for HomeScreen {
               state.search = self.search_input.text_as_single_line();
               state.search_mp3_files(state.search.clone());
             }
-            None
           }
           Focusable::Editor(i, editor_section) => {
             let tags = &mut state.searched_mp3_files[*i].tags;
@@ -533,33 +532,30 @@ impl Screen for HomeScreen {
                 if self.title_input.input(key_event) {
                   tags.title.0.edit(self.title_input.text_as_single_line());
                 }
-                None
               }
               EditorFocusable::ArtistInput => {
                 if self.artist_input.input(key_event) {
                   tags.artist.0.edit(self.artist_input.text_as_single_line());
                 }
-                None
               }
               EditorFocusable::YearInput => {
                 if self.year_input.input(key_event) {
                   tags.year.0.edit(self.year_input.text_as_single_line());
                 }
-                None
               }
               EditorFocusable::GenreInput => {
                 if self.genre_input.input(key_event) {
                   tags.genre.0.edit(self.genre_input.text_as_single_line());
                 }
-                None
               }
-              _ => None,
+              _ => {}
             }
           }
-          _ => None,
+          _ => {}
         }
       }
-      _ => None,
+      _ => {}
     }
+    Vec::new()
   }
 }
