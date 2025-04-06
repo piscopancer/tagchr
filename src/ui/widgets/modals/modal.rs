@@ -3,7 +3,7 @@ use ratatui::{
   buffer::Buffer,
   layout::{ Constraint, Flex, Layout, Margin, Offset, Rect },
   style::{ Color, Stylize },
-  text::{ Line, Span },
+  text::{ Line, Span, Text },
   widgets::{ Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, Widget, WidgetRef },
   Frame,
 };
@@ -24,6 +24,28 @@ pub mod enums {
 pub struct ModalOptions {
   current: usize,
   list: Vec<ModalOption>,
+}
+
+impl From<&ModalOptions> for Table<'_> {
+  fn from(value: &ModalOptions) -> Self {
+    Table::new(
+      Vec::from([
+        Row::new(
+          value.list
+            .iter()
+            .enumerate()
+            .map(|(i, o)| (
+              if value.current() == i {
+                Cell::new(Text::from(o.desc.clone()).centered()).reversed()
+              } else {
+                Cell::new(Text::from(o.desc.clone()).centered())
+              }
+            ))
+        ),
+      ]),
+      (0..value.list.len()).map(|_| Constraint::Fill(1))
+    ).column_spacing(1)
+  }
 }
 
 impl ModalOptions {
@@ -77,7 +99,7 @@ impl ModalOption {
 pub trait Modal: WidgetRef {
   fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand> {
     match (key_event.code, key_event.modifiers) {
-      (KeyCode::Esc, ..) => {
+      (KeyCode::Esc | KeyCode::Enter | KeyCode::Backspace | KeyCode::Char(' '), ..) => {
         return Vec::from([UiCommand::CloseLastModal]);
       }
       _ => {}
@@ -108,7 +130,7 @@ impl Modals {
       enums::Modal::Help => Box::new(HelpModal),
       enums::Modal::Save { index, song_title } =>
         Box::new(ConfirmSaveTagsModal::new(index, song_title)),
-      enums::Modal::SaveResult(_) => Box::new(SaveResultModal),
+      enums::Modal::SaveResult(_) => Box::new(SaveResultModal::new()),
     });
   }
   pub fn iter(&self) -> impl Iterator<Item = &Box<dyn Modal>> {

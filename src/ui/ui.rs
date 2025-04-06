@@ -43,7 +43,7 @@ impl Ui {
     Self {
       term: ratatui::init(),
       modals: Modals::new(),
-      screen: ui_enums::Screen::Home(HomeScreen::new(home::screen::Focusable::Search)),
+      screen: ui_enums::Screen::Home(HomeScreen::new(home::screen::Focusable::Search, None)),
     }
   }
   pub fn draw(&mut self, state: &mut State) {
@@ -77,13 +77,15 @@ impl Ui {
         self.screen = ui_enums::Screen::Lyrics(LyricsScreen::new(i, lyrics));
       }
       (ui_enums::Screen::Lyrics(lyrics_screen), ui_enums::ScreenKind::Home) => {
-        state.searched_mp3_files[lyrics_screen.index].tags.lyrics = lyrics_screen.lyrics.clone();
+        let mut tags = &mut state.searched_mp3_files[lyrics_screen.index].tags;
+        tags.lyrics = lyrics_screen.lyrics.clone();
         self.screen = ui_enums::Screen::Home(
           HomeScreen::new(
             home::screen::Focusable::Editor(
               lyrics_screen.index,
               home::screen::EditorFocusable::LyricsButton
-            )
+            ),
+            Some(tags)
           )
         );
       }
@@ -153,6 +155,7 @@ bitflags! {
   pub struct WidgetState: u8 {
     const Enabled = 1;
     const Highlighted = 1 << 1;
+    const Valid = 1 << 2;
   }
 }
 
@@ -162,7 +165,10 @@ pub trait StringTrait {
 
 impl StringTrait for String {
   fn to_single_line(&mut self) -> Self {
-    self.replace("\n", " ")
+    for pattern in ["\n", "\r"].iter() {
+      self.replace(pattern, " ");
+    }
+    self.clone()
   }
 }
 
@@ -170,6 +176,8 @@ impl From<WidgetState> for Style {
   fn from(state: WidgetState) -> Self {
     if state.is_empty() || !state.contains(WidgetState::Enabled) {
       Style::new().dark_gray()
+    } else if !state.contains(WidgetState::Valid) {
+      Style::new().red()
     } else if state.contains(WidgetState::Highlighted) {
       Style::new().yellow()
     } else {

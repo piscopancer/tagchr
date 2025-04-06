@@ -2,9 +2,21 @@ use crossterm::event::{ KeyCode, KeyEvent };
 use ratatui::{
   buffer::Buffer,
   layout::{ Constraint, Flex, Layout, Margin, Offset, Rect },
-  style::{ Color, Stylize },
+  style::{ Color, Style, Stylize },
   text::{ Line, Span, Text },
-  widgets::{ Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, Widget, WidgetRef },
+  widgets::{
+    Block,
+    BorderType,
+    Borders,
+    Cell,
+    Clear,
+    Paragraph,
+    Row,
+    Table,
+    Widget,
+    WidgetRef,
+    Wrap,
+  },
 };
 use crate::{ app::app::State, ui::UiCommand };
 use super::modal::{ self, Modal, ModalOption, ModalOptions };
@@ -53,14 +65,10 @@ impl Modal for ConfirmSaveTagsModal {
         self.options.next();
       }
       (KeyCode::Enter, ..) => {
-        let cmd = self.options.exec_current(state);
-        // TODO: return sequence of commands
-        // return [close last modal, cmd]
-        return cmd;
+        return self.options.exec_current(state);
       }
       (KeyCode::Char('s' | 'с'), ..) => {
-        let cmd = self.options.list_mut()[0].exec(state);
-        return cmd;
+        return self.options.list_mut()[0].exec(state);
       }
       _ => {}
     }
@@ -70,7 +78,7 @@ impl Modal for ConfirmSaveTagsModal {
 
 impl WidgetRef for ConfirmSaveTagsModal {
   fn render_ref(&self, area: Rect, buf: &mut Buffer) where Self: Sized {
-    let [modal_area] = Layout::vertical([Constraint::Max(10)])
+    let [area] = Layout::vertical([Constraint::Max(10)])
       .flex(Flex::Center)
       .areas(
         Layout::horizontal([Constraint::Max(40)])
@@ -82,61 +90,39 @@ impl WidgetRef for ConfirmSaveTagsModal {
       Constraint::Length(1),
     ])
       .spacing(1)
-      .areas(modal_area);
+      .areas(area.inner(Margin::new(1, 1)));
 
-    Clear.render(modal_area, buf);
+    Clear.render(area, buf);
     Block::bordered()
       .border_type(BorderType::Rounded)
       .title_top(Line::from(" Confirmation ").centered())
-      .render(modal_area, buf);
+      .render(area, buf);
     Paragraph::new(
-      Line::from({
-        Vec::from([
-          Span::from("ID3 tags will be saved for "),
-          Span::from(self.song_title.clone()).yellow(),
-        ])
-      })
+      Vec::from([
+        Line::default(),
+        Line::from({
+          Vec::from([
+            Span::from("ID3 tags will be saved for "),
+            Span::from(self.song_title.clone()).yellow(),
+          ])
+        }),
+      ])
     )
       .centered()
-      .render(
-        Rect {
-          x: modal_area.x + 1,
-          y: modal_area.y + 2,
-          width: modal_area.width - 2,
-          height: modal_area.height - 6,
-        },
-        buf
-      );
+      .wrap(Wrap::default())
+      .render(area.inner(Margin::new(1, 1)), buf);
     Block::bordered()
       .borders(Borders::TOP)
+      .border_style(Style::new())
       .render(
         Rect {
-          x: modal_area.x + 1,
-          y: modal_area.y + modal_area.height - 3,
-          width: modal_area.width - 2,
+          x: content_area.x,
+          y: content_area.y + content_area.height,
+          width: content_area.width,
           height: 1,
         },
         buf
       );
-    Table::new(
-      Vec::from([
-        Row::new(
-          self.options
-            .list()
-            .iter()
-            .enumerate()
-            .map(|(i, o)| (
-              if self.options.current() == i {
-                Cell::new(Text::from(o.desc.clone()).centered()).reversed()
-              } else {
-                Cell::new(Text::from(o.desc.clone()).centered())
-              }
-            ))
-        ),
-      ]),
-      (0..self.options.list().len()).map(|_| Constraint::Fill(1))
-    )
-      .column_spacing(1)
-      .render(options_area.inner(Margin::new(2, 0)).offset(Offset { x: 0, y: -1 }), buf);
+    Table::from(&self.options).render(options_area.inner(Margin::new(1, 0)), buf);
   }
 }
