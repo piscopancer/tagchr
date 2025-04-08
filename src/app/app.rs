@@ -91,7 +91,7 @@ impl App {
               HomeScreen::new(
                 HomeFocusable::Editor(screen.index, EditorFocusable::LyricsButton),
                 Some({
-                  let tags = &mut self.state.searched_mp3_files[screen.index].tags;
+                  let tags = &mut self.state.get_file_mut(screen.index).tags;
                   tags.lyrics = screen.lyrics.clone();
                   tags
                 })
@@ -133,7 +133,7 @@ impl App {
                 screen.genre_input.clear();
               }
               HomeFocusable::Table(i) => {
-                let tags = &self.state.searched_mp3_files[i].tags;
+                let tags = &self.state.get_file(i).tags;
                 screen.title_input.set_text(tags.title.0.to_string());
                 screen.artist_input.set_text(tags.artist.0.to_string());
                 screen.year_input.set_text(tags.year.0.to_string());
@@ -154,7 +154,7 @@ impl App {
         }
       }
       Command::SaveTags(i) => {
-        let audio = &mut self.state.searched_mp3_files[i].tags;
+        let audio = &mut self.state.get_file_mut(i).tags;
         let res = audio.save();
         sender.send(Command::TagsSaved(res));
       }
@@ -174,7 +174,7 @@ impl App {
               }
               HomeFocusable::Table(_) => {}
               HomeFocusable::Editor(i, f_ed_el) => {
-                let mut tags = &mut self.state.searched_mp3_files[i].tags;
+                let mut tags = &mut self.state.get_file_mut(i).tags;
                 match f_ed_el {
                   EditorFocusable::TitleInput => {
                     tags.title.0.reset();
@@ -207,7 +207,7 @@ impl App {
       Command::ResetLyricsScreenTag(el) => {
         match &self.ui.state.screen {
           Screen::Lyrics(screen) => {
-            let mut tags = &mut self.state.searched_mp3_files[screen.index].tags;
+            let mut tags = &mut self.state.get_file_mut(screen.index).tags;
             match screen.focused_el {
               LyricsFocusable::Lang => tags.lyrics.lang.reset(),
               LyricsFocusable::Desc => tags.lyrics.desc.reset(),
@@ -228,7 +228,7 @@ impl App {
                 self.state.search = screen.search_input.lines()[0].clone();
               }
               HomeFocusable::Editor(i, editor_section) => {
-                let tags = &mut self.state.searched_mp3_files[i].tags;
+                let tags = &mut self.state.get_file_mut(i).tags;
                 match editor_section {
                   EditorFocusable::TitleInput => {
                     if screen.title_input.input_for_humans(key_event, false) {
@@ -262,7 +262,7 @@ impl App {
       Command::HandleLyricsScreenInput(key_event, el) => {
         match &mut self.ui.state.screen {
           ui_enums::Screen::Lyrics(screen) => {
-            let tags = &mut self.state.searched_mp3_files[screen.index].tags;
+            let tags = &mut self.state.get_file_mut(screen.index).tags;
             match el {
               LyricsFocusable::Lang => {
                 if screen.lang_input.input_for_humans(key_event, false) {

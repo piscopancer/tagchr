@@ -21,8 +21,8 @@ impl fmt::Display for Source {
 pub struct State {
   pub running: bool,
   pub search: String,
-  pub scanned_mp3_files: Vec<Mp3File>,
-  pub searched_mp3_files: Vec<Mp3File>,
+  files: Vec<Mp3File>,
+  pub shown_indexes: Vec<usize>,
 }
 
 impl State {
@@ -30,13 +30,19 @@ impl State {
     let mut new = Self {
       running: true,
       search: "".into(),
-      scanned_mp3_files: vec![],
-      searched_mp3_files: vec![],
+      files: vec![],
+      shown_indexes: vec![],
     };
     dirs::download_dir().map(|dir| new.scan_mp3_files(dir, Source::Downloads));
     dirs::audio_dir().map(|dir| new.scan_mp3_files(dir, Source::Music));
     new.search_mp3_files(new.search.clone());
     new
+  }
+  pub fn get_file(&self, i: usize) -> &Mp3File {
+    &self.files[i]
+  }
+  pub fn get_file_mut(&mut self, i: usize) -> &mut Mp3File {
+    &mut self.files[i]
   }
   fn scan_mp3_files(&mut self, path: PathBuf, source: Source) {
     if let Ok(entries) = fs::read_dir(path) {
@@ -49,7 +55,7 @@ impl State {
         if path.is_dir() {
           self.scan_mp3_files(path.into(), source);
         } else if path.extension().map_or(false, |ext| ext == "mp3") {
-          self.scanned_mp3_files.push(Mp3File {
+          self.files.push(Mp3File {
             tags: SongTags::new(path.to_str().unwrap().into()),
             name: entry.file_name().to_str().unwrap().into(),
             path: path.to_str().unwrap().to_string().replace("\\", "/"),
@@ -67,14 +73,14 @@ impl State {
   pub fn search_mp3_files(&mut self, search: String) {
     let search = search.to_lowercase();
     if search.trim().is_empty() {
-      self.searched_mp3_files = self.scanned_mp3_files.clone();
+      self.shown_indexes = (0..self.files.len()).collect();
       return;
     }
-    self.searched_mp3_files = self.scanned_mp3_files
+    self.shown_indexes = self.files
       .iter()
-      .cloned()
+      .enumerate()
       .filter(
-        |f|
+        |(i, f)|
           f.name.to_lowercase().contains(&search) ||
           f.tags.title.0.original
             .as_ref()
@@ -93,6 +99,7 @@ impl State {
             .map(|t| t.to_lowercase().contains(&search))
             .unwrap_or_default()
       )
+      .map(|(i, f)| i)
       .collect();
   }
 }

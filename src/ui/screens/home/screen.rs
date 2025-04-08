@@ -123,7 +123,7 @@ impl InputHandler for HomeScreen {
     event: Event,
     sender: Sender<Command>
   ) -> bool {
-    let total_searched_mp3_files = state.searched_mp3_files.len();
+    let shown_indexes = state.shown_indexes.len();
     match event {
       Event::Key(event) => {
         match (event.code, event.modifiers, self.focused_el) {
@@ -158,7 +158,7 @@ impl InputHandler for HomeScreen {
           (KeyCode::Up, KeyModifiers::NONE, Focusable::Table(i)) => {
             sender.send(
               Command::FocusHomeElement(
-                Focusable::Table(if i > 0 { i - 1 } else { total_searched_mp3_files - 1 })
+                Focusable::Table(if i > 0 { i - 1 } else { shown_indexes - 1 })
               )
             );
             true
@@ -176,9 +176,7 @@ impl InputHandler for HomeScreen {
                   EditorFocusable::LyricsButton => {
                     sender.send(
                       Command::SetScreen(
-                        Screen::Lyrics(
-                          LyricsScreen::new(i, state.searched_mp3_files[i].tags.lyrics.clone())
-                        )
+                        Screen::Lyrics(LyricsScreen::new(i, state.get_file(i).tags.lyrics.clone()))
                       )
                     );
                     true
@@ -189,7 +187,7 @@ impl InputHandler for HomeScreen {
             }
           (KeyCode::Down, KeyModifiers::CONTROL, f_el) | (KeyCode::PageDown, _, f_el) =>
             match f_el {
-              Focusable::Search if total_searched_mp3_files > 0 => {
+              Focusable::Search if shown_indexes > 0 => {
                 sender.send(Command::FocusHomeElement(Focusable::Table(0)));
                 true
               }
@@ -215,7 +213,7 @@ impl InputHandler for HomeScreen {
           (KeyCode::Down, KeyModifiers::NONE, Focusable::Table(i)) => {
             sender.send(
               Command::FocusHomeElement(
-                Focusable::Table(if i == total_searched_mp3_files - 1 { 0 } else { i + 1 })
+                Focusable::Table(if i == shown_indexes - 1 { 0 } else { i + 1 })
               )
             );
             true
@@ -245,9 +243,7 @@ impl InputHandler for HomeScreen {
                   EditorFocusable::LyricsButton => {
                     sender.send(
                       Command::SetScreen(
-                        Screen::Lyrics(
-                          LyricsScreen::new(i, state.searched_mp3_files[i].tags.lyrics.clone())
-                        )
+                        Screen::Lyrics(LyricsScreen::new(i, state.get_file(i).tags.lyrics.clone()))
                       )
                     );
                     true
@@ -262,7 +258,7 @@ impl InputHandler for HomeScreen {
             KeyModifiers::CONTROL,
             Focusable::Table(i) | Focusable::Editor(i, _),
           ) => {
-            let tags = &state.searched_mp3_files[i].tags;
+            let tags = &state.get_file(i).tags;
             if tags.edited() {
               sender.send(
                 Command::OpenModal(
@@ -344,11 +340,11 @@ impl StateDependentWidget for HomeScreen {
     {
       let mut files_table = {
         Table::new(
-          state.searched_mp3_files
+          state.shown_indexes
             .iter()
-            .enumerate()
-            .map(|(i, f)| {
-              let edited = state.searched_mp3_files[i].tags.edited();
+            .map(|i| {
+              let f = state.get_file(*i);
+              let edited = f.tags.edited();
               Row::new(
                 vec![
                   Cell::from(
@@ -395,7 +391,7 @@ impl StateDependentWidget for HomeScreen {
                       Span::from(" "),
                       Span::from((i + 1).to_string()).gray(),
                       Span::from("/").dark_gray(),
-                      Span::from(state.searched_mp3_files.len().to_string().dark_gray()),
+                      Span::from(state.shown_indexes.len().to_string().dark_gray()),
                       Span::from(" "),
                     ])
                   ).centered()
@@ -423,7 +419,7 @@ impl StateDependentWidget for HomeScreen {
     }
 
     let tags = match &self.focused_el {
-      Focusable::Table(i) | Focusable::Editor(i, _) => Some(&state.searched_mp3_files[*i].tags),
+      Focusable::Table(i) | Focusable::Editor(i, _) => Some(&state.get_file(*i).tags),
       _ => None,
     };
 

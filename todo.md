@@ -20,14 +20,10 @@ lyrics button needs TagWidget and it will highlight "edit" when lyrics tag is ch
 
 # todo
 
+- replace `searched_mp3_files` with array of indexes, add method `get_file` with `i` argument that gets mapped to the `shown_files`
 - language textareas cannot exceed `3` characters. it may not be the only input with validation so i should create a trait and impl it for textareas. it's supposed to run a specific check against current input and return the result
-- bug: resetting inputs in lyrics does not reset text inside them
-- bug: editor inputs on home are updated with previous version of song
-- add help modal with ...
-- show in table using yellow if song has been `edited`
 - maybe implement Widget/render for input
 - use modules to encapsulate movement between sections. will be useful for side-effects (when ctrl-down into table should also put text into inputs, cannot change sections just by modifying app state bcs it's not enough)
-- when casting to general impl `modal`, concrete impls are not considered
 
 <!-- -->
 

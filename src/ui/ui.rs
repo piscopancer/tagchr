@@ -97,32 +97,7 @@ impl Ui {
       }
     });
   }
-  // fn navigate(&mut self, to: ui_enums::ScreenKind, state: &mut State) {
-  //   let from = &self.screen;
-  //   match (from, to) {
-  //     (ui_enums::Screen::Home(_), ui_enums::ScreenKind::Home) => {}
-  //     (ui_enums::Screen::Lyrics(_), ui_enums::ScreenKind::Lyrics) => {}
-  //     //
-  //     (ui_enums::Screen::Home(home_screen), ui_enums::ScreenKind::Lyrics) => {
-  //       let i = self.selected_song_index().unwrap();
-  //       let lyrics = state.searched_mp3_files[i].tags.lyrics.clone();
-  //       self.screen = ui_enums::Screen::Lyrics(LyricsScreen::new(i, lyrics));
-  //     }
-  //     (ui_enums::Screen::Lyrics(lyrics_screen), ui_enums::ScreenKind::Home) => {
-  //       let mut tags = &mut state.searched_mp3_files[lyrics_screen.index].tags;
-  //       tags.lyrics = lyrics_screen.lyrics.clone();
-  //       self.screen = ui_enums::Screen::Home(
-  //         HomeScreen::new(
-  //           home::screen::Focusable::Editor(
-  //             lyrics_screen.index,
-  //             home::screen::EditorFocusable::LyricsButton
-  //           ),
-  //           Some(tags)
-  //         )
-  //       );
-  //     }
-  //   }
-  // }
+
   pub fn selected_song_index(&self) -> Option<usize> {
     match &self.state.screen {
       ui_enums::Screen::Home(home_screen) => {
@@ -136,23 +111,9 @@ impl Ui {
     }
   }
   pub fn song_tags<'a>(&'a self, state: &'a State) -> Option<&'a SongTags> {
-    self.selected_song_index().map(|i| &state.searched_mp3_files[i].tags)
+    self.selected_song_index().map(|i| &state.get_file(i).tags)
   }
 }
-
-// pub trait Screen {
-//   fn draw(&mut self, frame: &mut Frame, state: &State);
-//   fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand>;
-// }
-
-// bitflags! {
-//   #[derive(PartialEq, Clone, Copy)]
-//   pub struct WidgetFlags: u8 {
-//     const Enabled = 1;
-//     const Highlighted = 1 << 1;
-//     const Valid = 1 << 2;
-//   }
-// }
 
 #[derive(Copy, Clone)]
 pub struct StyleFlags {

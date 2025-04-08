@@ -92,9 +92,9 @@ impl InputHandler for LyricsScreen {
                 Screen::Home(
                   HomeScreen::new(
                     home::screen::Focusable::Editor(self.index, EditorFocusable::LyricsButton),
+                    // TODO: fix this shit, what does it do here? why does home screen need reference to tags? it makes sense that it's used by `new` to populate inputs on the start but what if every screen had a function `on_start` that would expose state from which it could be possible to populate the shit? that way screen could be responsible for requiring data for population instead of expecting the screen changer to provide tags for it (exactly what happens here)
                     Some({
-                      let tags = &state.searched_mp3_files[self.index].tags;
-                      // tags.lyrics = self.lyrics.clone();
+                      let tags = &state.get_file(self.index).tags;
                       tags
                     })
                   )
@@ -158,7 +158,7 @@ impl StateDependentWidget for LyricsScreen {
       .centered()
       .render(header_area, buf);
 
-    let tags = &state.searched_mp3_files[self.index].tags;
+    let tags = &state.get_file(self.index).tags;
 
     {
       let mut lang_input = self.lang_input.clone();
