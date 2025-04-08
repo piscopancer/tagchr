@@ -1,30 +1,33 @@
+use std::sync::mpsc::Sender;
 use crate::{
-  app::{ app::{ App, State }, tag::LyricsEditableTag },
+  app::{ app::{ App, Command }, state::State, tag::LyricsEditableTag },
   ui::{
     block::BlockTrait,
-    home::{ self, screen::HomeScreen },
+    home::{ self, screen::{ EditorFocusable, HomeScreen } },
     shortcut::Shortcut,
     text_area::TextAreaTrait,
-    ui_enums,
-    Screen,
+    ui_enums::{ self, Screen },
+    InputHandler,
+    StateDependentWidget,
     StringTrait,
-    UiCommand,
-    WidgetState,
+    UiState,
+    StyleFlags,
   },
 };
-use crossterm::event::{ KeyCode, KeyEvent, KeyModifiers };
+use crossterm::event::{ Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers };
 use id3::frame::Lyrics;
 use ratatui::{
-  layout::{ Constraint, Layout, Margin },
+  buffer::Buffer,
+  layout::{ Constraint, Layout, Margin, Rect },
   style::{ Color, Style, Stylize },
   text::{ Line, Span },
-  widgets::{ Block, BorderType, Paragraph },
+  widgets::{ Block, BorderType, Paragraph, Widget },
   Frame,
 };
 use tui_textarea::TextArea;
 
 #[derive(Clone, Copy, PartialEq)]
-enum FocusedElement {
+pub enum Focusable {
   Lang,
   Desc,
   Text,
@@ -34,31 +37,36 @@ pub struct LyricsScreen {
   // TODO: file name
   pub index: usize,
   pub lyrics: LyricsEditableTag,
-  focused_el: FocusedElement,
-  lang_input: TextArea<'static>,
-  desc_input: TextArea<'static>,
-  text_input: TextArea<'static>,
-  // lang_validator:
+  pub focused_el: Focusable,
+  pub lang_input: TextArea<'static>,
+  pub desc_input: TextArea<'static>,
+  pub text_textarea: TextArea<'static>,
 }
 
 impl LyricsScreen {
   pub fn new(index: usize, lyrics: LyricsEditableTag) -> Self {
-    let focused_el = FocusedElement::Lang;
+    let focused_el = Focusable::Lang;
     Self {
       lang_input: {
-        let mut new = TextArea::custom();
-        new.insert_str(lyrics.lang.to_string());
-        new
+        let mut input = TextArea::new(Vec::from([lyrics.lang.to_string()]));
+        input.set_block(Block::bordered().border_type(BorderType::Rounded).title_top("Lang"));
+        input.set_cursor_line_style(Style::new());
+
+        input
       },
       desc_input: {
-        let mut new = TextArea::custom();
-        new.insert_str(lyrics.desc.to_string());
-        new
+        let mut input = TextArea::new(Vec::from([lyrics.desc.to_string()]));
+        input.set_block(Block::bordered().border_type(BorderType::Rounded).title_top("Desc"));
+        input.set_cursor_line_style(Style::new());
+
+        input
       },
-      text_input: {
-        let mut new = TextArea::custom();
-        new.insert_str(lyrics.text.to_string());
-        new
+      text_textarea: {
+        let mut input = TextArea::new(Vec::from([lyrics.text.to_string()]));
+        input.set_block(Block::bordered().border_type(BorderType::Rounded).title_top("Text"));
+        input.set_cursor_line_style(Style::new());
+
+        input
       },
       focused_el,
       lyrics,
@@ -67,8 +75,74 @@ impl LyricsScreen {
   }
 }
 
-impl Screen for LyricsScreen {
-  fn draw(&mut self, frame: &mut Frame, state: &State) {
+impl InputHandler for LyricsScreen {
+  fn handle_input(
+    &self,
+    state: &State,
+    ui_state: &UiState,
+    event: Event,
+    sender: Sender<Command>
+  ) -> bool {
+    match event {
+      Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+        match (key_event.code, key_event.modifiers, self.focused_el) {
+          (KeyCode::Esc, _, _) => {
+            sender.send(
+              Command::SetScreen(
+                Screen::Home(
+                  HomeScreen::new(
+                    home::screen::Focusable::Editor(self.index, EditorFocusable::LyricsButton),
+                    Some({
+                      let tags = &state.searched_mp3_files[self.index].tags;
+                      // tags.lyrics = self.lyrics.clone();
+                      tags
+                    })
+                  )
+                )
+              )
+            );
+            true
+          }
+          (KeyCode::Down, KeyModifiers::CONTROL, f_el) | (KeyCode::PageDown, _, f_el) => {
+            sender.send(
+              Command::FocusLyricsElement(match f_el {
+                Focusable::Lang => Focusable::Desc,
+                Focusable::Desc => Focusable::Text,
+                Focusable::Text => Focusable::Lang,
+              })
+            );
+            true
+          }
+          (KeyCode::Up, KeyModifiers::CONTROL, f_el) | (KeyCode::PageUp, _, f_el) => {
+            sender.send(
+              Command::FocusLyricsElement(match f_el {
+                Focusable::Lang => Focusable::Text,
+                Focusable::Desc => Focusable::Lang,
+                Focusable::Text => Focusable::Desc,
+              })
+            );
+            true
+          }
+          (KeyCode::Char('r' | 'к'), KeyModifiers::CONTROL, f_el) => {
+            sender.send(Command::ResetLyricsScreenTag(f_el));
+            true
+          }
+          _ => {
+            sender.send(Command::HandleLyricsScreenInput(key_event.clone(), self.focused_el));
+            true
+          }
+          _ => false,
+        }
+      }
+      _ => false,
+    }
+  }
+}
+
+impl StateDependentWidget for LyricsScreen {
+  fn render_from_state(&self, area: Rect, buf: &mut Buffer, state: &State, ui_state: &UiState)
+    where Self: Sized
+  {
     let [header_area, lang_area, desc_area, text_area, footer_area] = Layout::vertical(
       vec![
         Constraint::Length(2),
@@ -77,75 +151,73 @@ impl Screen for LyricsScreen {
         Constraint::Fill(1),
         Constraint::Length(1)
       ]
-    ).areas(frame.area());
+    ).areas(area);
     let footer_area = footer_area.inner(Margin::new(1, 0));
 
-    let header_par = Paragraph::new(
-      vec![Line::from("Lyrics Editing"), Line::from("").gray()]
-    ).centered();
+    let header_par = Paragraph::new(vec![Line::from("Lyrics Editing"), Line::from("").gray()])
+      .centered()
+      .render(header_area, buf);
+
+    let tags = &state.searched_mp3_files[self.index].tags;
 
     {
-      let selected = self.focused_el == FocusedElement::Lang;
-      self.lang_input.toggle_cursor(selected);
-      let ws = {
-        let mut ws = WidgetState::Enabled;
-        ws.set(WidgetState::Valid, {
-          let s = self.lang_input.lines()[0].clone();
-          s.len() < 4
-        });
-        ws.set(WidgetState::Highlighted, selected);
-        ws
+      let mut lang_input = self.lang_input.clone();
+      let border_flags = StyleFlags {
+        enabled: true,
+        valid: true,
+        highlighted: self.focused_el == Focusable::Lang,
       };
-      self.lang_input.set_block(
-        Block::bordered().border_type(BorderType::Rounded).title_top("Language").state_styled(ws)
+      let text_flags = StyleFlags {
+        enabled: true,
+        valid: true,
+        highlighted: tags.lyrics.lang.edited(),
+      };
+      lang_input.set_style(Style::from(text_flags));
+      lang_input.set_block(
+        lang_input.block().cloned().unwrap_or_default().border_style(Style::from(border_flags))
       );
-      self.lang_input.set_style(
-        Style::from({
-          let mut ws = WidgetState::Enabled & WidgetState::Valid;
-          ws.set(WidgetState::Highlighted, self.lyrics.lang.edited());
-          ws
-        })
-      );
+      lang_input.toggle_cursor(border_flags.highlighted);
+      lang_input.render(lang_area, buf);
     }
 
     {
-      let selected = self.focused_el == FocusedElement::Desc;
-      self.desc_input.toggle_cursor(selected);
-      let ws = {
-        let mut ws = WidgetState::Enabled;
-        ws.set(WidgetState::Highlighted, selected);
-        ws
+      let mut desc_input = self.desc_input.clone();
+      let border_flags = StyleFlags {
+        enabled: true,
+        valid: true,
+        highlighted: self.focused_el == Focusable::Desc,
       };
-      self.desc_input.set_block(
-        Block::bordered().border_type(BorderType::Rounded).title_top("Description").state_styled(ws)
+      let text_flags = StyleFlags {
+        enabled: true,
+        valid: true,
+        highlighted: tags.lyrics.desc.edited(),
+      };
+      desc_input.set_style(Style::from(text_flags));
+      desc_input.set_block(
+        desc_input.block().cloned().unwrap_or_default().border_style(Style::from(border_flags))
       );
-      self.desc_input.set_style(
-        Style::from({
-          let mut ws = WidgetState::Enabled;
-          ws.set(WidgetState::Highlighted, self.lyrics.desc.edited());
-          ws
-        })
-      );
+      desc_input.toggle_cursor(border_flags.highlighted);
+      desc_input.render(desc_area, buf);
     }
 
     {
-      let selected = self.focused_el == FocusedElement::Text;
-      self.text_input.toggle_cursor(selected);
-      let ws = {
-        let mut ws = WidgetState::Enabled;
-        ws.set(WidgetState::Highlighted, selected);
-        ws
+      let mut text_textarea = self.text_textarea.clone();
+      let border_flags = StyleFlags {
+        enabled: true,
+        valid: true,
+        highlighted: self.focused_el == Focusable::Text,
       };
-      self.text_input.set_block(
-        Block::bordered().border_type(BorderType::Rounded).title_top("Text").state_styled(ws)
+      let text_flags = StyleFlags {
+        enabled: true,
+        valid: true,
+        highlighted: tags.lyrics.text.edited(),
+      };
+      text_textarea.set_style(Style::from(text_flags));
+      text_textarea.set_block(
+        text_textarea.block().cloned().unwrap_or_default().border_style(Style::from(border_flags))
       );
-      self.text_input.set_style(
-        Style::from({
-          let mut ws = WidgetState::Enabled;
-          ws.set(WidgetState::Highlighted, self.lyrics.text.edited());
-          ws
-        })
-      );
+      text_textarea.toggle_cursor(border_flags.highlighted);
+      text_textarea.render(text_area, buf);
     }
 
     let footer_par = Paragraph::new(
@@ -156,64 +228,8 @@ impl Screen for LyricsScreen {
           Shortcut::new("Ctrl+R", "Reset field", Color::Gray).to_spans(),
         ].concat()
       )
-    ).right_aligned();
-
-    frame.render_widget(&header_par, header_area);
-    frame.render_widget(&self.lang_input, lang_area);
-    frame.render_widget(&self.desc_input, desc_area);
-    frame.render_widget(&self.text_input, text_area);
-    frame.render_widget(&footer_par, footer_area);
-  }
-  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand> {
-    match (key_event.code, key_event.modifiers) {
-      (KeyCode::Esc, _) | (KeyCode::Left, KeyModifiers::CONTROL) => {
-        return Vec::from([UiCommand::ChangeScreen(ui_enums::ScreenKind::Home)]);
-      }
-      (KeyCode::PageUp, _) | (KeyCode::Up, KeyModifiers::CONTROL) => {
-        self.focused_el = match self.focused_el {
-          FocusedElement::Lang => FocusedElement::Text,
-          FocusedElement::Desc => FocusedElement::Lang,
-          FocusedElement::Text => FocusedElement::Desc,
-        };
-      }
-      (KeyCode::PageDown, _) | (KeyCode::Down, KeyModifiers::CONTROL) => {
-        self.focused_el = match self.focused_el {
-          FocusedElement::Lang => FocusedElement::Desc,
-          FocusedElement::Desc => FocusedElement::Text,
-          FocusedElement::Text => FocusedElement::Lang,
-        };
-      }
-      (KeyCode::Char('r' | 'к'), KeyModifiers::CONTROL) =>
-        match self.focused_el {
-          FocusedElement::Lang => {
-            self.lyrics.lang.reset();
-            self.lang_input.set_text(self.lyrics.lang.to_string());
-          }
-          FocusedElement::Desc => {
-            self.lyrics.desc.reset();
-            self.desc_input.set_text(self.lyrics.desc.to_string());
-          }
-          FocusedElement::Text => {
-            self.lyrics.text.reset();
-            self.text_input.set_text(self.lyrics.text.to_string());
-          }
-        }
-      _ =>
-        match self.focused_el {
-          FocusedElement::Lang => {
-            self.lang_input.input_for_humans(key_event, false);
-            self.lyrics.lang.edit(self.lang_input.lines()[0].clone());
-          }
-          FocusedElement::Desc => {
-            self.desc_input.input_for_humans(key_event, false);
-            self.lyrics.desc.edit(self.desc_input.lines()[0].clone());
-          }
-          FocusedElement::Text => {
-            self.text_input.input_for_humans(key_event, true);
-            self.lyrics.text.edit(self.text_input.lines().join("\n"));
-          }
-        }
-    }
-    Vec::new()
+    )
+      .right_aligned()
+      .render(footer_area, buf);
   }
 }

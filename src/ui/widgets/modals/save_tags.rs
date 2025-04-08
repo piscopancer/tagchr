@@ -1,4 +1,6 @@
-use crossterm::event::{ KeyCode, KeyEvent };
+use std::sync::mpsc::Sender;
+
+use crossterm::event::{ Event, KeyCode, KeyEvent, KeyEventKind };
 use ratatui::{
   buffer::Buffer,
   layout::{ Constraint, Flex, Layout, Margin, Offset, Rect },
@@ -18,7 +20,7 @@ use ratatui::{
     Wrap,
   },
 };
-use crate::{ app::app::State, ui::UiCommand };
+use crate::{ app::{ app::Command, state::State }, ui::{ InputHandler, UiState } };
 use super::modal::{ self, Modal, ModalOption, ModalOptions };
 
 pub struct ConfirmSaveTagsModal {
@@ -33,46 +35,55 @@ impl ConfirmSaveTagsModal {
       index,
       song_title: song_title.into(),
       options: ModalOptions::new([
-        ModalOption::new(
-          "Save",
-          Box::new(move |state| {
-            let res = state.searched_mp3_files[index].tags.save();
-            Vec::from([
-              UiCommand::CloseLastModal,
-              UiCommand::OpenModal(modal::enums::Modal::SaveResult(res)),
-            ])
-          })
-        ),
-        ModalOption::new(
-          "Cancel",
-          Box::new(|state| Vec::from([UiCommand::CloseLastModal]))
-        ),
+        ModalOption::new("Save", Command::SaveTags(index)),
+        ModalOption::new("Cancel", Command::CloseLastModal),
       ]),
     }
   }
 }
 
-impl Modal for ConfirmSaveTagsModal {
-  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand> {
-    match (key_event.code, key_event.modifiers) {
-      (KeyCode::Esc, ..) => {
-        return Vec::from([UiCommand::CloseLastModal]);
+impl InputHandler for ConfirmSaveTagsModal {
+  fn handle_input(
+    &self,
+    state: &State,
+    ui_state: &UiState,
+    event: Event,
+    sender: Sender<Command>
+  ) -> bool {
+    match event {
+      Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+        match key_event.code {
+          KeyCode::Esc => {
+            sender.send(Command::CloseLastModal);
+            true
+          }
+          KeyCode::Left => {
+            sender.send(Command::SetModalOption(self.options.prev()));
+            true
+          }
+          KeyCode::Right => {
+            sender.send(Command::SetModalOption(self.options.next()));
+            true
+          }
+          KeyCode::Enter => {
+            sender.send(Command::ExecuteModalOption(self.options.current()));
+            sender.send(Command::CloseLastModal);
+            true
+          }
+          _ => false,
+        }
       }
-      (KeyCode::Left, ..) => {
-        self.options.prev();
-      }
-      (KeyCode::Right, ..) => {
-        self.options.next();
-      }
-      (KeyCode::Enter, ..) => {
-        return self.options.exec_current(state);
-      }
-      (KeyCode::Char('s' | 'с'), ..) => {
-        return self.options.list_mut()[0].exec(state);
-      }
-      _ => {}
+      _ => false,
     }
-    Vec::new()
+  }
+}
+
+impl Modal for ConfirmSaveTagsModal {
+  fn options(&self) -> Option<&ModalOptions> {
+    Some(&self.options)
+  }
+  fn options_mut(&mut self) -> Option<&mut ModalOptions> {
+    Some(&mut self.options)
   }
 }
 

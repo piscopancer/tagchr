@@ -1,27 +1,44 @@
+use std::sync::mpsc::Sender;
+
 use crate::{
-  app::{ app::{ App, State }, tag::SongTags },
+  app::{ app::{ App, Command }, state::State, tag::SongTags },
   info::{ PROJECT_DESC, PROJECT_NAME },
   ui::{
     block::BlockTrait,
     lyrics::screen::LyricsScreen,
-    modals::modal,
+    modals::{ help::HelpModal, modal::{ self, enums::Modal }, save_tags::ConfirmSaveTagsModal },
     shortcut::Shortcut,
     text_area::TextAreaTrait,
-    ui::{ ui_enums, Screen, Ui },
+    ui::{ ui_enums, Ui },
+    ui_enums::Screen,
     widget::{ FocusableWidget, WidgetWithEditableContent },
+    InputHandler,
+    StateDependentWidget,
     StringTrait,
-    UiCommand,
-    WidgetState,
+    StyleFlags,
+    UiState,
   },
 };
-use crossterm::event::{ KeyCode, KeyEvent, KeyModifiers };
+use crossterm::event::{ Event, KeyCode, KeyEvent, KeyModifiers };
 use id3::TagLike;
 use ratatui::{
   buffer::Buffer,
   layout::{ Constraint, Flex, Layout, Margin, Rect },
   style::{ Color, Style, Styled, Stylize },
-  text::{ Line, Span },
-  widgets::{ block::Title, Block, BorderType, Cell, List, Paragraph, Row, Table, Widget },
+  text::{ Line, Span, Text },
+  widgets::{
+    block::Title,
+    Block,
+    BorderType,
+    Cell,
+    List,
+    Paragraph,
+    Row,
+    StatefulWidget,
+    Table,
+    TableState,
+    Widget,
+  },
   Frame,
 };
 use tui_textarea::{ CursorMove, TextArea };
@@ -45,44 +62,240 @@ pub enum Focusable {
 
 pub struct HomeScreen {
   pub focused_el: Focusable,
-  search_input: TextArea<'static>,
-  title_input: TextArea<'static>,
-  artist_input: TextArea<'static>,
-  year_input: TextArea<'static>,
-  genre_input: TextArea<'static>,
+  pub search_input: TextArea<'static>,
+  pub title_input: TextArea<'static>,
+  pub artist_input: TextArea<'static>,
+  pub year_input: TextArea<'static>,
+  pub genre_input: TextArea<'static>,
 }
 
 impl HomeScreen {
-  pub fn new(selection: Focusable, song_tags: Option<&SongTags>) -> Self {
+  pub fn new(selection: Focusable, tags: Option<&SongTags>) -> Self {
     Self {
       focused_el: selection,
-      search_input: TextArea::custom(),
+      search_input: {
+        let mut input = TextArea::new(Vec::new());
+        input.set_block(Block::bordered().border_type(BorderType::Rounded).title_top("Search"));
+        input.set_cursor_line_style(Style::new());
+        input
+      },
       title_input: {
-        let mut input = TextArea::custom();
-        input.set_text(song_tags.map(|t| t.title.0.to_string()).unwrap_or_default());
+        let mut input = TextArea::new(
+          Vec::from([tags.map(|t| t.title.0.to_string()).unwrap_or_default()])
+        );
+        input.set_block(Block::bordered().border_type(BorderType::Rounded).title_top("Title"));
+        input.set_cursor_line_style(Style::new());
         input
       },
       artist_input: {
-        let mut input = TextArea::custom();
-        input.set_text(song_tags.map(|t| t.artist.0.to_string()).unwrap_or_default());
+        let mut input = TextArea::new(
+          Vec::from([tags.map(|t| t.artist.0.to_string()).unwrap_or_default()])
+        );
+        input.set_block(Block::bordered().border_type(BorderType::Rounded).title_top("Artist"));
+        input.set_cursor_line_style(Style::new());
         input
       },
       genre_input: {
-        let mut input = TextArea::custom();
-        input.set_text(song_tags.map(|t| t.genre.0.to_string()).unwrap_or_default());
+        let mut input = TextArea::new(
+          Vec::from([tags.map(|t| t.genre.0.to_string()).unwrap_or_default()])
+        );
+        input.set_block(Block::bordered().border_type(BorderType::Rounded).title_top("Genre"));
+        input.set_cursor_line_style(Style::new());
         input
       },
       year_input: {
-        let mut input = TextArea::custom();
-        input.set_text(song_tags.map(|t| t.year.0.to_string()).unwrap_or_default());
+        let mut input = TextArea::new(
+          Vec::from([tags.map(|t| t.year.0.to_string()).unwrap_or_default()])
+        );
+        input.set_block(Block::bordered().border_type(BorderType::Rounded).title_top("Year"));
+        input.set_cursor_line_style(Style::new());
         input
       },
     }
   }
 }
 
-impl Screen for HomeScreen {
-  fn draw(&mut self, frame: &mut Frame, state: &State) {
+impl InputHandler for HomeScreen {
+  fn handle_input(
+    &self,
+    state: &State,
+    ui_state: &UiState,
+    event: Event,
+    sender: Sender<Command>
+  ) -> bool {
+    let total_searched_mp3_files = state.searched_mp3_files.len();
+    match event {
+      Event::Key(event) => {
+        match (event.code, event.modifiers, self.focused_el) {
+          (KeyCode::Esc, _, _) => {
+            sender.send(Command::Quit);
+            true
+          }
+          (KeyCode::Up, KeyModifiers::CONTROL, f_el) | (KeyCode::PageUp, _, f_el) =>
+            match f_el {
+              Focusable::Table(_) => {
+                sender.send(Command::FocusHomeElement(Focusable::Search));
+                true
+              }
+              Focusable::Editor(i, editor_selection) => {
+                sender.send(
+                  Command::FocusHomeElement(match editor_selection {
+                    EditorFocusable::TitleInput =>
+                      Focusable::Editor(i, EditorFocusable::LyricsButton),
+                    EditorFocusable::ArtistInput =>
+                      Focusable::Editor(i, EditorFocusable::TitleInput),
+                    EditorFocusable::YearInput =>
+                      Focusable::Editor(i, EditorFocusable::ArtistInput),
+                    EditorFocusable::GenreInput => Focusable::Editor(i, EditorFocusable::YearInput),
+                    EditorFocusable::LyricsButton =>
+                      Focusable::Editor(i, EditorFocusable::GenreInput),
+                  })
+                );
+                true
+              }
+              Focusable::Search => false,
+            }
+          (KeyCode::Up, KeyModifiers::NONE, Focusable::Table(i)) => {
+            sender.send(
+              Command::FocusHomeElement(
+                Focusable::Table(if i > 0 { i - 1 } else { total_searched_mp3_files - 1 })
+              )
+            );
+            true
+          }
+          (KeyCode::End, _, f_el) | (KeyCode::Right, KeyModifiers::CONTROL, f_el) =>
+            match f_el {
+              Focusable::Table(i) => {
+                sender.send(
+                  Command::FocusHomeElement(Focusable::Editor(i, EditorFocusable::TitleInput))
+                );
+                true
+              }
+              Focusable::Editor(i, ed_f_el) =>
+                match ed_f_el {
+                  EditorFocusable::LyricsButton => {
+                    sender.send(
+                      Command::SetScreen(
+                        Screen::Lyrics(
+                          LyricsScreen::new(i, state.searched_mp3_files[i].tags.lyrics.clone())
+                        )
+                      )
+                    );
+                    true
+                  }
+                  _ => false,
+                }
+              _ => false,
+            }
+          (KeyCode::Down, KeyModifiers::CONTROL, f_el) | (KeyCode::PageDown, _, f_el) =>
+            match f_el {
+              Focusable::Search if total_searched_mp3_files > 0 => {
+                sender.send(Command::FocusHomeElement(Focusable::Table(0)));
+                true
+              }
+              Focusable::Table(..) => false,
+              Focusable::Editor(i, editor_selection) => {
+                sender.send(
+                  Command::FocusHomeElement(match editor_selection {
+                    EditorFocusable::TitleInput =>
+                      Focusable::Editor(i, EditorFocusable::ArtistInput),
+                    EditorFocusable::ArtistInput =>
+                      Focusable::Editor(i, EditorFocusable::YearInput),
+                    EditorFocusable::YearInput => Focusable::Editor(i, EditorFocusable::GenreInput),
+                    EditorFocusable::GenreInput =>
+                      Focusable::Editor(i, EditorFocusable::LyricsButton),
+                    EditorFocusable::LyricsButton =>
+                      Focusable::Editor(i, EditorFocusable::TitleInput),
+                  })
+                );
+                true
+              }
+              _ => false,
+            }
+          (KeyCode::Down, KeyModifiers::NONE, Focusable::Table(i)) => {
+            sender.send(
+              Command::FocusHomeElement(
+                Focusable::Table(if i == total_searched_mp3_files - 1 { 0 } else { i + 1 })
+              )
+            );
+            true
+          }
+          (KeyCode::Home, _, f_el) | (KeyCode::Left, KeyModifiers::CONTROL, f_el) =>
+            match f_el {
+              Focusable::Editor(i, _) => {
+                sender.send(Command::FocusHomeElement(Focusable::Table(i)));
+                true
+              }
+              _ => false,
+            }
+          (
+            KeyCode::Enter,
+            _,
+            f_el @ (Focusable::Table(..) | Focusable::Editor(_, EditorFocusable::LyricsButton)),
+          ) => {
+            match f_el {
+              Focusable::Table(i) => {
+                sender.send(
+                  Command::FocusHomeElement(Focusable::Editor(i, EditorFocusable::TitleInput))
+                );
+                true
+              }
+              Focusable::Editor(i, f_ed_el) =>
+                match f_ed_el {
+                  EditorFocusable::LyricsButton => {
+                    sender.send(
+                      Command::SetScreen(
+                        Screen::Lyrics(
+                          LyricsScreen::new(i, state.searched_mp3_files[i].tags.lyrics.clone())
+                        )
+                      )
+                    );
+                    true
+                  }
+                  _ => false,
+                }
+              _ => false,
+            }
+          }
+          (
+            KeyCode::Char('s' | 'ы'),
+            KeyModifiers::CONTROL,
+            Focusable::Table(i) | Focusable::Editor(i, _),
+          ) => {
+            let tags = &state.searched_mp3_files[i].tags;
+            if tags.edited() {
+              sender.send(
+                Command::OpenModal(
+                  Modal::ConfirmSaveTags(ConfirmSaveTagsModal::new(i, tags.title.0.to_string()))
+                )
+              );
+            }
+            true
+          }
+          (KeyCode::Char('h' | 'р'), KeyModifiers::CONTROL, _) => {
+            sender.send(Command::OpenModal(Modal::Help(HelpModal)));
+            true
+          }
+          (KeyCode::Char('r' | 'к'), KeyModifiers::CONTROL, f_el) => {
+            sender.send(Command::ResetHomeScreenTag(f_el));
+            true
+          }
+          _ => {
+            sender.send(Command::HandleHomeScreenInput(event.clone(), self.focused_el));
+            true
+          }
+          _ => false,
+        }
+      }
+      _ => false,
+    }
+  }
+}
+
+impl StateDependentWidget for HomeScreen {
+  fn render_from_state(&self, area: Rect, buf: &mut Buffer, state: &State, ui_state: &UiState)
+    where Self: Sized
+  {
     let github_shortcut = Shortcut::new("Ctrl+G", "Github", Color::Gray);
     let help_shortcut = Shortcut::new("Ctrl+H", "Help", Color::Gray);
     let save_shortcut = Shortcut::new("Ctrl+S", "Save", Color::Yellow);
@@ -91,29 +304,134 @@ impl Screen for HomeScreen {
       Constraint::Length(1),
       Constraint::Fill(1),
       Constraint::Length(1),
-    ]).areas(frame.area());
+    ]).areas(area);
     let footer_area = footer_area.inner(Margin::new(1, 0));
-    let hor_l = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]);
-    let [sidebar_area, editor_area] = hor_l.areas(main_area);
-    let [
-      //
-      // debug_area,
-      search_area,
-      table_area,
-    ] = Layout::vertical([
-      //
-      // Constraint::Length(1),
+    let [sidebar_area, editor_area] = Layout::horizontal([
+      Constraint::Fill(1),
+      Constraint::Fill(1),
+    ]).areas(main_area);
+    let [search_area, table_area] = Layout::vertical([
       Constraint::Length(3),
       Constraint::Fill(1),
     ]).areas(sidebar_area);
-    let [table_title_file_area, table_title_path_area, table_title_mod_area] = Layout::horizontal([
-      Constraint::Fill(1),
-      Constraint::Fill(1),
-      Constraint::Fill(1),
-    ])
-      .horizontal_margin(1)
-      .spacing(1)
-      .areas(table_area);
+
+    {
+      let mut search_input = self.search_input.clone();
+      let flags = StyleFlags {
+        enabled: true,
+        valid: true,
+        highlighted: self.focused_el == Focusable::Search,
+      };
+      search_input.set_style(
+        Style::from(StyleFlags {
+          enabled: true,
+          valid: true,
+          highlighted: false,
+        })
+      );
+      search_input.set_block(
+        search_input.block().cloned().unwrap_or_default().border_style(Style::from(flags))
+      );
+      search_input.toggle_cursor(flags.highlighted);
+      search_input.render(search_area, buf);
+    }
+
+    let sel_song_i = match &self.focused_el {
+      Focusable::Table(i) | Focusable::Editor(i, ..) => Some(i),
+      _ => None,
+    };
+
+    {
+      let mut files_table = {
+        Table::new(
+          state.searched_mp3_files
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+              let edited = state.searched_mp3_files[i].tags.edited();
+              Row::new(
+                vec![
+                  Cell::from(
+                    Line::from(
+                      Vec::from([
+                        if edited { Span::from("▌").yellow() } else { Span::from(" ") },
+                        Span::from(f.name.clone()).style(
+                          if edited {
+                            Style::new().yellow()
+                          } else {
+                            Style::new()
+                          }
+                        ),
+                      ])
+                    )
+                  ),
+                  Cell::new(f.source.to_string().green().italic()),
+                  Cell::new(f.modified_date.clone().dark_gray())
+                ]
+              )
+            })
+            .collect::<Vec<_>>(),
+          [Constraint::Fill(1), Constraint::Fill(1), Constraint::Fill(1)]
+        )
+          .row_highlight_style(Style::new().on_dark_gray().bold())
+          .column_spacing(1)
+          .block(
+            Block::bordered()
+              .border_type(BorderType::Rounded)
+              .border_style(
+                Style::from(StyleFlags {
+                  enabled: true,
+                  valid: true,
+                  highlighted: match self.focused_el {
+                    Focusable::Table(..) => true,
+                    _ => false,
+                  },
+                })
+              )
+              .title_bottom(
+                sel_song_i.map_or(Line::default(), |i|
+                  Line::from(
+                    Vec::from([
+                      Span::from(" "),
+                      Span::from((i + 1).to_string()).gray(),
+                      Span::from("/").dark_gray(),
+                      Span::from(state.searched_mp3_files.len().to_string().dark_gray()),
+                      Span::from(" "),
+                    ])
+                  ).centered()
+                )
+              )
+          )
+      };
+      let mut table_state = &mut TableState::new().with_selected(sel_song_i.cloned());
+      <Table as StatefulWidget>::render(files_table, table_area, buf, table_state);
+    }
+
+    {
+      let [file_area, path_area, mod_area] = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Fill(1),
+        Constraint::Fill(1),
+      ])
+        .horizontal_margin(1)
+        .spacing(1)
+        .areas(table_area);
+
+      let table_title_file = Line::from(" MP3 file ").centered().render(file_area, buf);
+      let table_title_path = Line::from(" Path ").centered().render(path_area, buf);
+      let table_title_mod = Line::from(" Modified ").centered().render(mod_area, buf);
+    }
+
+    let tags = match &self.focused_el {
+      Focusable::Table(i) | Focusable::Editor(i, _) => Some(&state.searched_mp3_files[*i].tags),
+      _ => None,
+    };
+
+    let editor_focused = match self.focused_el {
+      Focusable::Editor(..) => true,
+      _ => false,
+    };
+
     let [
       title_input_area,
       artist_input_area,
@@ -130,181 +448,128 @@ impl Screen for HomeScreen {
       .flex(Flex::Start)
       .areas(editor_area);
 
-    self.search_input.toggle_cursor(self.focused_el == Focusable::Search);
-    self.search_input.set_block(
-      Block::bordered()
-        .border_type(BorderType::Rounded)
-        .title_top("Search")
-        .state_styled({
-          let mut ws = WidgetState::empty();
-          ws.insert(WidgetState::Enabled);
-          ws.set(WidgetState::Highlighted, self.focused_el == Focusable::Search);
-          ws
-        })
-    );
-
-    // TODO: combine with part below
-    let mut files_table = {
-      Table::default()
-        .column_spacing(1)
-        .widths([Constraint::Fill(1), Constraint::Fill(1), Constraint::Fill(1)])
-        .block(
-          Block::bordered()
-            .border_type(BorderType::Rounded)
-            .state_styled({
-              let mut ws = WidgetState::empty();
-              ws.insert(WidgetState::Enabled);
-              ws.set(WidgetState::Highlighted, match self.focused_el {
-                Focusable::Table(..) => true,
-                _ => false,
-              });
-              ws
-            })
-        )
-    };
-    files_table = files_table.rows({
-      let rows = state.searched_mp3_files
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-          Row::new(
-            vec![
-              Cell::new(f.name.clone()),
-              Cell::new(f.path.clone().green().italic()),
-              Cell::new(f.modified_date.clone().dark_gray())
-            ]
-          ).style(match &self.focused_el {
-            Focusable::Table(i2) if *i2 == i => Style::new().reversed(),
-            Focusable::Editor(i2, ..) if *i2 == i => Style::new().on_dark_gray(),
-            _ => Style::new(),
-          })
-        })
-        .collect::<Vec<_>>();
-      rows
-    });
-
-    let table_title_file = Line::from(" MP3 file ").centered();
-    let table_title_path = Line::from(" Path ").centered();
-    let table_title_mod = Line::from(" Last mod ").centered();
-
-    let rerender_tag_input = |
-      input: &mut TextArea<'_>,
-      title: &'static str,
-      text: String,
-      ws_0_enabled: bool,
-      ws_0_hl: bool,
-      ws_1_enabled: bool,
-      ws_1_hl: bool
-    | {
-      let ws = {
-        let mut ws = WidgetState::empty();
-        ws.set(WidgetState::Enabled, ws_0_enabled);
-        ws.set(WidgetState::Highlighted, ws_0_hl);
-        ws
+    {
+      let mut title_input = self.title_input.clone();
+      let border_flags = StyleFlags {
+        enabled: editor_focused,
+        valid: true,
+        highlighted: match self.focused_el {
+          Focusable::Editor(_, ed_f) =>
+            match ed_f {
+              EditorFocusable::TitleInput => true,
+              _ => false,
+            }
+          _ => false,
+        },
       };
-      input.set_block(
-        Block::bordered().border_type(BorderType::Rounded).title_top(title).state_styled(ws)
-      );
-      input.toggle_cursor(ws_0_hl);
-      input.set_style(
-        Style::from({
-          let mut ws = WidgetState::empty();
-          ws.set(WidgetState::Enabled, ws_1_enabled);
-          ws.set(WidgetState::Highlighted, ws_1_hl);
-          ws
+      title_input.set_style(
+        Style::from(StyleFlags {
+          enabled: editor_focused,
+          valid: true,
+          highlighted: tags.map(|t| t.title.0.edited()).unwrap_or_default(),
         })
       );
-    };
+      title_input.set_block(
+        title_input.block().cloned().unwrap_or_default().border_style(Style::from(border_flags))
+      );
+      title_input.toggle_cursor(border_flags.highlighted);
+      title_input.render(title_input_area, buf);
+    }
 
-    let song_tags = match &self.focused_el {
-      Focusable::Table(i) | Focusable::Editor(i, _) => Some(&state.searched_mp3_files[*i].tags),
-      _ => None,
-    };
+    {
+      let mut artist_input = self.artist_input.clone();
+      let flags = StyleFlags {
+        enabled: editor_focused,
+        valid: true,
+        highlighted: match self.focused_el {
+          Focusable::Editor(_, ed_f) =>
+            match ed_f {
+              EditorFocusable::ArtistInput => true,
+              _ => false,
+            }
+          _ => false,
+        },
+      };
+      artist_input.set_style(
+        Style::from(StyleFlags {
+          enabled: editor_focused,
+          valid: true,
+          highlighted: tags.map(|t| t.artist.0.edited()).unwrap_or_default(),
+        })
+      );
+      artist_input.set_block(
+        artist_input.block().cloned().unwrap_or_default().border_style(Style::from(flags))
+      );
+      artist_input.toggle_cursor(flags.highlighted);
+      artist_input.render(artist_input_area, buf);
+    }
 
-    rerender_tag_input(
-      &mut self.title_input,
-      "Title",
-      song_tags.map(|t| t.title.0.to_string()).unwrap_or_default(),
-      song_tags.is_some(),
-      match self.focused_el {
-        Focusable::Editor(_, ed_f) =>
-          match ed_f {
-            EditorFocusable::TitleInput => true,
-            _ => false,
-          }
-        _ => false,
-      },
-      song_tags.is_some(),
-      song_tags.map(|t| t.title.0.edited()).unwrap_or_default()
-    );
+    {
+      let mut year_input = self.year_input.clone();
+      let flags = StyleFlags {
+        enabled: editor_focused,
+        valid: true,
+        highlighted: match self.focused_el {
+          Focusable::Editor(_, ed_f) =>
+            match ed_f {
+              EditorFocusable::YearInput => true,
+              _ => false,
+            }
+          _ => false,
+        },
+      };
+      year_input.set_style(
+        Style::from(StyleFlags {
+          enabled: editor_focused,
+          valid: true,
+          highlighted: tags.map(|t| t.year.0.edited()).unwrap_or_default(),
+        })
+      );
+      year_input.set_block(
+        year_input.block().cloned().unwrap_or_default().border_style(Style::from(flags))
+      );
+      year_input.toggle_cursor(flags.highlighted);
+      year_input.render(year_input_area, buf);
+    }
 
-    rerender_tag_input(
-      &mut self.artist_input,
-      "Artist",
-      song_tags.map(|t| t.artist.0.to_string()).unwrap_or_default(),
-      song_tags.is_some(),
-      match self.focused_el {
-        Focusable::Editor(_, ed_f) =>
-          match ed_f {
-            EditorFocusable::ArtistInput => true,
-            _ => false,
-          }
-        _ => false,
-      },
-      song_tags.is_some(),
-      song_tags.map(|t| t.artist.0.edited()).unwrap_or_default()
-    );
-
-    rerender_tag_input(
-      &mut self.genre_input,
-      "Genre",
-      song_tags.map(|t| t.genre.0.to_string()).unwrap_or_default(),
-      song_tags.is_some(),
-      match self.focused_el {
-        Focusable::Editor(_, ed_f) =>
-          match ed_f {
-            EditorFocusable::GenreInput => true,
-            _ => false,
-          }
-        _ => false,
-      },
-      song_tags.is_some(),
-      song_tags.map(|t| t.genre.0.edited()).unwrap_or_default()
-    );
-
-    rerender_tag_input(
-      &mut self.year_input,
-      "Year",
-      song_tags.map(|t| t.year.0.to_string()).unwrap_or_default(),
-      song_tags.is_some(),
-      match self.focused_el {
-        Focusable::Editor(_, ed_f) =>
-          match ed_f {
-            EditorFocusable::YearInput => true,
-            _ => false,
-          }
-        _ => false,
-      },
-      song_tags.is_some(),
-      song_tags.map(|t| t.year.0.edited()).unwrap_or_default()
-    );
+    {
+      let mut genre_input = self.genre_input.clone();
+      let flags = StyleFlags {
+        enabled: editor_focused,
+        valid: true,
+        highlighted: match self.focused_el {
+          Focusable::Editor(_, ed_f) =>
+            match ed_f {
+              EditorFocusable::GenreInput => true,
+              _ => false,
+            }
+          _ => false,
+        },
+      };
+      genre_input.set_style(
+        Style::from(StyleFlags {
+          enabled: editor_focused,
+          valid: true,
+          highlighted: tags.map(|t| t.genre.0.edited()).unwrap_or_default(),
+        })
+      );
+      genre_input.set_block(
+        genre_input.block().cloned().unwrap_or_default().border_style(Style::from(flags))
+      );
+      genre_input.toggle_cursor(flags.highlighted);
+      genre_input.render(genre_input_area, buf);
+    }
 
     let mut lyrics_button = Paragraph::new(
       vec![
         Line::default(),
         Line::from("Edit").style(
-          Style::from({
-            let mut ws = WidgetState::empty();
-            ws.set(WidgetState::Enabled, song_tags.is_some());
-            ws.set(
-              WidgetState::Highlighted,
-              song_tags
-                .map(
-                  |t| (t.lyrics.lang.edited() || t.lyrics.desc.edited() || t.lyrics.text.edited())
-                )
-                .unwrap_or_default()
-            );
-            ws
+          Style::from(StyleFlags {
+            enabled: editor_focused,
+            valid: true,
+            highlighted: tags
+              .map(|t| (t.lyrics.lang.edited() || t.lyrics.desc.edited() || t.lyrics.text.edited()))
+              .unwrap_or_default(),
           })
         ),
         Line::default()
@@ -314,37 +579,36 @@ impl Screen for HomeScreen {
         Block::bordered()
           .border_type(BorderType::Rounded)
           .title_top("Lyrics")
-          .state_styled({
-            let mut ws = WidgetState::empty();
-            ws.set(WidgetState::Enabled, song_tags.is_some());
-            ws.set(WidgetState::Highlighted, match self.focused_el {
-              Focusable::Editor(_, ed_f) =>
-                match ed_f {
-                  EditorFocusable::LyricsButton => true,
-                  _ => false,
-                }
-              _ => false,
-            });
-            ws
-          })
+          .border_style(
+            Style::from(StyleFlags {
+              enabled: editor_focused,
+              highlighted: match self.focused_el {
+                Focusable::Editor(_, ed_f) =>
+                  match ed_f {
+                    EditorFocusable::LyricsButton => true,
+                    _ => false,
+                  }
+                _ => false,
+              },
+              valid: true,
+            })
+          )
       )
-      .centered();
+      .centered()
+      .render(lyrics_button_area, buf);
 
-    // let debug_p = Paragraph::new(
-    //   vec![Line::from(format!("sec [{:?}] ", self.focused_el))]
-    // ).light_magenta();
     let header_line = Line::from(
       Vec::from([
         Span::from(": ").dark_gray(),
         Span::from(PROJECT_NAME),
         Span::from(" :").dark_gray(),
       ])
-    );
+    ).render(header_area, buf);
 
     let footer_line = Line::from(
       Vec::from([
-        if song_tags.is_some_and(|t| t.edited()) { save_shortcut.to_spans() } else { Vec::new() },
-        if song_tags.is_some_and(|t| t.edited()) {
+        if tags.is_some_and(|t| t.edited()) { save_shortcut.to_spans() } else { Vec::new() },
+        if tags.is_some_and(|t| t.edited()) {
           Vec::from([Span::from(" :: ").dark_gray()])
         } else {
           Vec::new()
@@ -353,263 +617,8 @@ impl Screen for HomeScreen {
         Vec::from([Span::from(" :: ").dark_gray()]),
         github_shortcut.to_spans(),
       ]).concat()
-    ).right_aligned();
-
-    frame.render_widget(&header_line, header_area);
-    frame.render_widget(&self.search_input, search_area);
-    frame.render_widget(&files_table, table_area);
-    frame.render_widget(&table_title_file, table_title_file_area);
-    frame.render_widget(&table_title_path, table_title_path_area);
-    frame.render_widget(&table_title_mod, table_title_mod_area);
-    frame.render_widget(&self.title_input, title_input_area);
-    frame.render_widget(&self.artist_input, artist_input_area);
-    frame.render_widget(&self.year_input, year_input_area);
-    frame.render_widget(&self.genre_input, genre_input_area);
-    frame.render_widget(&lyrics_button, lyrics_button_area);
-    frame.render_widget(&footer_line, footer_area);
+    )
+      .right_aligned()
+      .render(footer_area, buf);
   }
-  fn handle_key_event<'a>(
-    &'a mut self,
-    key_event: KeyEvent,
-    state: &'a mut State
-  ) -> Vec<UiCommand> {
-    let total_searched_mp3_files = state.searched_mp3_files.len();
-    match (key_event.code, key_event.modifiers) {
-      (KeyCode::Esc, _) => {
-        state.running = false;
-      }
-      (KeyCode::PageUp, _) | (KeyCode::Up, KeyModifiers::CONTROL) =>
-        match self.focused_el {
-          Focusable::Table(_) => {
-            self.focused_el = Focusable::Search;
-            update_inputs(self, state);
-          }
-          Focusable::Editor(i, editor_selection) =>
-            match editor_selection {
-              EditorFocusable::TitleInput => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::LyricsButton);
-              }
-              EditorFocusable::ArtistInput => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::TitleInput);
-              }
-              EditorFocusable::YearInput => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::ArtistInput);
-              }
-              EditorFocusable::GenreInput => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::YearInput);
-              }
-              EditorFocusable::LyricsButton => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::GenreInput);
-              }
-            }
-          Focusable::Search => {}
-        }
-      (KeyCode::Up, KeyModifiers::NONE) => {
-        match self.focused_el {
-          Focusable::Table(i) => {
-            let new_i = if i > 0 { i - 1 } else { total_searched_mp3_files - 1 };
-            self.focused_el = Focusable::Table(new_i);
-            update_inputs(self, state);
-          }
-          _ => {}
-        }
-      }
-      (KeyCode::End, _) | (KeyCode::Right, KeyModifiers::CONTROL) =>
-        match self.focused_el {
-          Focusable::Table(i) => {
-            self.focused_el = Focusable::Editor(i, EditorFocusable::TitleInput);
-          }
-          Focusable::Editor(i, editor_section) =>
-            match editor_section {
-              EditorFocusable::LyricsButton => {
-                return Vec::from([UiCommand::ChangeScreen(ui_enums::ScreenKind::Lyrics)]);
-              }
-              _ => {}
-            }
-          _ => {}
-        }
-      (KeyCode::PageDown, _) | (KeyCode::Down, KeyModifiers::CONTROL) =>
-        match self.focused_el {
-          Focusable::Search if total_searched_mp3_files > 0 => {
-            self.focused_el = Focusable::Table(0);
-            update_inputs(self, state);
-          }
-          Focusable::Editor(i, editor_selection) =>
-            match editor_selection {
-              EditorFocusable::TitleInput => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::ArtistInput);
-              }
-              EditorFocusable::ArtistInput => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::YearInput);
-              }
-              EditorFocusable::YearInput => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::GenreInput);
-              }
-              EditorFocusable::GenreInput => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::LyricsButton);
-              }
-              EditorFocusable::LyricsButton => {
-                self.focused_el = Focusable::Editor(i, EditorFocusable::TitleInput);
-              }
-            }
-          _ => {}
-        }
-      (KeyCode::Down, KeyModifiers::NONE) =>
-        match self.focused_el {
-          Focusable::Table(i) => {
-            let new_i = if i == total_searched_mp3_files - 1 { 0 } else { i + 1 };
-            self.focused_el = Focusable::Table(new_i);
-            update_inputs(self, state);
-          }
-          _ => {}
-        }
-      (KeyCode::Home, _) | (KeyCode::Left, KeyModifiers::CONTROL) =>
-        match self.focused_el {
-          Focusable::Editor(i, _) => {
-            self.focused_el = Focusable::Table(i);
-          }
-          _ => {}
-        }
-      (KeyCode::Enter, _) if
-        match self.focused_el {
-          Focusable::Table(_) | Focusable::Editor(_, EditorFocusable::LyricsButton) => true,
-          _ => false,
-        }
-      => {
-        match self.focused_el {
-          Focusable::Table(i) => {
-            self.focused_el = Focusable::Editor(i, EditorFocusable::TitleInput);
-          }
-          Focusable::Editor(i, editor_section) =>
-            match editor_section {
-              EditorFocusable::LyricsButton => {
-                return Vec::from([UiCommand::ChangeScreen(ui_enums::ScreenKind::Lyrics)]);
-              }
-              _ => {}
-            }
-          _ => {}
-        }
-      }
-      (KeyCode::Char('s' | 'ы'), KeyModifiers::CONTROL) => {
-        // REPEATED
-        let audio = match self.focused_el {
-          Focusable::Table(i) | Focusable::Editor(i, _) =>
-            Some((i, &mut state.searched_mp3_files[i].tags)),
-          _ => None,
-        };
-        let i = audio.as_ref().map(|s| s.0);
-        let mut tags = audio.map(|s| s.1);
-        // REPEATED
-        if let Some(tags) = tags {
-          if !tags.edited() {
-            return Vec::new();
-          }
-          return Vec::from([
-            UiCommand::OpenModal(modal::enums::Modal::Save {
-              index: i.unwrap(),
-              song_title: tags.title.0.to_string(),
-            }),
-          ]);
-        }
-      }
-      (KeyCode::Char('r' | 'к'), KeyModifiers::CONTROL) =>
-        match self.focused_el {
-          Focusable::Search => {
-            state.search = String::default();
-            state.search_mp3_files(state.search.clone());
-          }
-          Focusable::Editor(_, ed_f) => {
-            // REPEATED
-            let audio = match &self.focused_el {
-              Focusable::Table(i) | Focusable::Editor(i, _) =>
-                Some((i, &mut state.searched_mp3_files[*i].tags)),
-              _ => None,
-            };
-            let i = audio.as_ref().map(|s| *s.0);
-            let mut tags = audio.map(|s| s.1);
-            // REPEATED
-            tags.map(|tags| {
-              match ed_f {
-                EditorFocusable::TitleInput => tags.title.0.reset(),
-                EditorFocusable::ArtistInput => tags.artist.0.reset(),
-                EditorFocusable::YearInput => tags.year.0.reset(),
-                EditorFocusable::GenreInput => tags.genre.0.reset(),
-                EditorFocusable::LyricsButton => {}
-              }
-            });
-          }
-          _ => {}
-        }
-      _ =>
-        match &self.focused_el {
-          Focusable::Search => {
-            if self.search_input.input_for_humans(key_event, false) {
-              state.search_mp3_files(state.search.clone());
-            }
-            state.search = self.search_input.lines()[0].clone();
-          }
-          Focusable::Editor(i, editor_section) => {
-            let tags = &mut state.searched_mp3_files[*i].tags;
-            match editor_section {
-              EditorFocusable::TitleInput => {
-                self.title_input.input_for_humans(key_event, false);
-                tags.title.0.edit(self.title_input.lines()[0].clone());
-              }
-              EditorFocusable::ArtistInput => {
-                self.artist_input.input_for_humans(key_event, false);
-                tags.artist.0.edit(self.artist_input.lines()[0].clone());
-              }
-              EditorFocusable::YearInput => {
-                self.year_input.input_for_humans(key_event, false);
-                tags.year.0.edit(self.year_input.lines()[0].clone());
-              }
-              EditorFocusable::GenreInput => {
-                self.genre_input.input_for_humans(key_event, false);
-                tags.genre.0.edit(self.genre_input.lines()[0].clone());
-              }
-              EditorFocusable::LyricsButton => {}
-            }
-          }
-          _ => {}
-        }
-      _ => {}
-    }
-    Vec::new()
-  }
-}
-
-fn update_inputs(home_screen: &mut HomeScreen, state: &mut State) {
-  // REPEATED
-  let audio = match &home_screen.focused_el {
-    Focusable::Table(i) | Focusable::Editor(i, _) =>
-      Some((i, &mut state.searched_mp3_files[*i].tags)),
-    _ => None,
-  };
-  let i = audio.as_ref().map(|s| *s.0);
-  let mut tags = audio.map(|s| s.1);
-  // REPEATED
-  home_screen.title_input.set_text(
-    tags
-      .as_ref()
-      .map(|t| t.title.0.to_string())
-      .unwrap_or_default()
-  );
-  home_screen.artist_input.set_text(
-    tags
-      .as_ref()
-      .map(|t| t.artist.0.to_string())
-      .unwrap_or_default()
-  );
-  home_screen.genre_input.set_text(
-    tags
-      .as_ref()
-      .map(|t| t.genre.0.to_string())
-      .unwrap_or_default()
-  );
-  home_screen.year_input.set_text(
-    tags
-      .as_ref()
-      .map(|t| t.year.0.to_string())
-      .unwrap_or_default()
-  );
 }

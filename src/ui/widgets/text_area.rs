@@ -1,6 +1,6 @@
 use ratatui::{ style::{ Style, Stylize }, widgets::{ Block, BorderType } };
 use tui_textarea::{ CursorMove, Input, Key, TextArea };
-use crate::ui::{ StringTrait, WidgetState };
+use crate::ui::{ StringTrait, StyleFlags };
 use super::{
   block::BlockTrait,
   widget::{ FocusableWidget, ToggleableWidget, WidgetWithEditableContent },
@@ -8,7 +8,6 @@ use super::{
 use clipboard_win::{ get_clipboard_string, set_clipboard_string };
 
 pub trait TextAreaTrait {
-  fn custom() -> Self;
   fn clear(&mut self);
   fn set_text(&mut self, text: String);
   fn toggle_cursor(&mut self, t: bool);
@@ -16,13 +15,9 @@ pub trait TextAreaTrait {
 }
 
 impl TextAreaTrait for TextArea<'_> {
-  fn custom() -> Self {
-    let mut new = Self::default();
-    new.set_cursor_line_style(Style::new());
-    new
-  }
   fn clear(&mut self) {
-    *self = TextArea::custom();
+    self.select_all();
+    self.delete_char();
   }
   fn set_text(&mut self, text: String) {
     self.clear();
@@ -84,72 +79,5 @@ impl TextAreaTrait for TextArea<'_> {
       }
       _ => false,
     }
-  }
-}
-
-// trait Validation<O, E> {
-//   fn validate(validator: impl Fn() -> bool) -> Result<O, E>;
-// }
-
-// struct InputValidation {
-
-// }
-
-// impl InputValidation {
-
-// }
-
-// impl Validation for InputValidation {
-//   type Ok = ;
-// }
-
-/* 
-input_state
-  toggleation
-  validation
-
-button_state
-  toggleation
-
-text_area_state
-  scroll
-*/
-
-//
-
-struct Validation<F> {
-  validator: F,
-}
-
-impl<F> Validation<F> {
-  pub fn new(validator: F) -> Self {
-    Self {
-      validator,
-    }
-  }
-  pub fn verify(&self) -> bool where F: Fn() -> bool {
-    (self.validator)()
-  }
-}
-
-//
-
-type InputValidation = Validation<String>;
-
-struct InputState {
-  flags: WidgetState,
-  validation: Option<InputValidation>,
-}
-
-impl InputState {
-  pub fn new() -> Self {
-    Self {
-      flags: WidgetState::empty(),
-      validation: None,
-    }
-  }
-  pub fn with_validation(mut self, v: InputValidation) -> Self {
-    self.validation = Some(v);
-    self
   }
 }

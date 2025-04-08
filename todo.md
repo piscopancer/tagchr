@@ -27,6 +27,7 @@ lyrics button needs TagWidget and it will highlight "edit" when lyrics tag is ch
 - show in table using yellow if song has been `edited`
 - maybe implement Widget/render for input
 - use modules to encapsulate movement between sections. will be useful for side-effects (when ctrl-down into table should also put text into inputs, cannot change sections just by modifying app state bcs it's not enough)
+- when casting to general impl `modal`, concrete impls are not considered
 
 <!-- -->
 

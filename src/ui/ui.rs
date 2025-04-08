@@ -1,7 +1,9 @@
-use std::io::Stdout;
+use std::{ io::Stdout, sync::mpsc::Sender };
 use bitflags::{ bitflags, bitflags_match, Flags };
-use crossterm::event::{ KeyCode, KeyEvent, KeyModifiers };
+use crossterm::event::{ Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers };
 use ratatui::{
+  buffer::Buffer,
+  layout::Rect,
   prelude::CrosstermBackend,
   style::{ Color, Style, Styled, Stylize },
   widgets::{ Block, BorderType, Borders, List, Paragraph, Table },
@@ -9,16 +11,25 @@ use ratatui::{
   Terminal,
 };
 use tui_textarea::TextArea;
-use crate::app::{ app::{ App, State }, tag::SongTags };
+use crate::app::{ app::{ App, Command }, state::State, tag::SongTags };
 use super::{
   modals::modal::{ enums::Modal, Modals },
   screens::{ home::{ self, screen::HomeScreen }, lyrics::screen::LyricsScreen },
 };
 
-pub enum UiCommand {
-  ChangeScreen(ui_enums::ScreenKind),
-  OpenModal(Modal),
-  CloseLastModal,
+pub trait StateDependentWidget {
+  fn render_from_state(&self, area: Rect, buf: &mut Buffer, state: &State, ui_state: &UiState)
+    where Self: Sized;
+}
+
+pub trait InputHandler {
+  fn handle_input(
+    &self,
+    state: &State,
+    ui_state: &UiState,
+    event: Event,
+    sender: Sender<Command>
+  ) -> bool;
 }
 
 pub mod ui_enums {
@@ -32,67 +43,88 @@ pub mod ui_enums {
   }
 }
 
-pub struct Ui {
-  term: Terminal<CrosstermBackend<Stdout>>,
+pub struct UiState {
   pub modals: Modals,
   pub screen: ui_enums::Screen,
+}
+
+pub struct Ui {
+  term: Terminal<CrosstermBackend<Stdout>>,
+  pub state: UiState,
 }
 
 impl Ui {
   pub fn new() -> Self {
     Self {
       term: ratatui::init(),
-      modals: Modals::new(),
-      screen: ui_enums::Screen::Home(HomeScreen::new(home::screen::Focusable::Search, None)),
+      state: UiState {
+        modals: Modals::new(),
+        screen: ui_enums::Screen::Home(HomeScreen::new(home::screen::Focusable::Search, None)),
+      },
     }
   }
-  pub fn draw(&mut self, state: &mut State) {
-    self.term.draw(|frame| {
-      match &mut self.screen {
-        // TODO: impl Widget for screens even though they are just holders for actual widgets? may not make sense tbh
-        ui_enums::Screen::Home(screen) => {
-          screen.draw(frame, state);
+  pub fn handle_input(&self, state: &State, event: Event, sender: Sender<Command>) {
+    match event {
+      Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+        if let Some(modal) = self.state.modals.last() {
+          modal.handle_input(state, &self.state, event, sender);
+          return;
         }
-        ui_enums::Screen::Lyrics(screen) => {
-          screen.draw(frame, state);
+        match &self.state.screen {
+          ui_enums::Screen::Home(screen) => {
+            screen.handle_input(state, &self.state, event, sender);
+          }
+          ui_enums::Screen::Lyrics(screen) => {
+            screen.handle_input(state, &self.state, event, sender);
+          }
         }
       }
-      // draw modals after screens bcs they need to sit on top
-      for modal in self.modals.iter() {
-        // modal
+      _ => {}
+    }
+  }
+  pub fn render(&mut self, state: &State) {
+    self.term.draw(|frame| {
+      match &self.state.screen {
+        ui_enums::Screen::Home(screen) => {
+          screen.render_from_state(frame.area(), frame.buffer_mut(), state, &self.state);
+        }
+        ui_enums::Screen::Lyrics(screen) => {
+          screen.render_from_state(frame.area(), frame.buffer_mut(), state, &self.state);
+        }
+      }
+      for modal in self.state.modals.iter() {
         modal.render_ref(frame.area(), frame.buffer_mut());
-        // frame.render_widget(modal, frame.area());
       }
     });
   }
-  fn navigate(&mut self, to: ui_enums::ScreenKind, state: &mut State) {
-    let from = &self.screen;
-    match (from, to) {
-      (ui_enums::Screen::Home(_), ui_enums::ScreenKind::Home) => {}
-      (ui_enums::Screen::Lyrics(_), ui_enums::ScreenKind::Lyrics) => {}
-      //
-      (ui_enums::Screen::Home(home_screen), ui_enums::ScreenKind::Lyrics) => {
-        let i = self.selected_song_index().unwrap();
-        let lyrics = state.searched_mp3_files[i].tags.lyrics.clone();
-        self.screen = ui_enums::Screen::Lyrics(LyricsScreen::new(i, lyrics));
-      }
-      (ui_enums::Screen::Lyrics(lyrics_screen), ui_enums::ScreenKind::Home) => {
-        let mut tags = &mut state.searched_mp3_files[lyrics_screen.index].tags;
-        tags.lyrics = lyrics_screen.lyrics.clone();
-        self.screen = ui_enums::Screen::Home(
-          HomeScreen::new(
-            home::screen::Focusable::Editor(
-              lyrics_screen.index,
-              home::screen::EditorFocusable::LyricsButton
-            ),
-            Some(tags)
-          )
-        );
-      }
-    }
-  }
+  // fn navigate(&mut self, to: ui_enums::ScreenKind, state: &mut State) {
+  //   let from = &self.screen;
+  //   match (from, to) {
+  //     (ui_enums::Screen::Home(_), ui_enums::ScreenKind::Home) => {}
+  //     (ui_enums::Screen::Lyrics(_), ui_enums::ScreenKind::Lyrics) => {}
+  //     //
+  //     (ui_enums::Screen::Home(home_screen), ui_enums::ScreenKind::Lyrics) => {
+  //       let i = self.selected_song_index().unwrap();
+  //       let lyrics = state.searched_mp3_files[i].tags.lyrics.clone();
+  //       self.screen = ui_enums::Screen::Lyrics(LyricsScreen::new(i, lyrics));
+  //     }
+  //     (ui_enums::Screen::Lyrics(lyrics_screen), ui_enums::ScreenKind::Home) => {
+  //       let mut tags = &mut state.searched_mp3_files[lyrics_screen.index].tags;
+  //       tags.lyrics = lyrics_screen.lyrics.clone();
+  //       self.screen = ui_enums::Screen::Home(
+  //         HomeScreen::new(
+  //           home::screen::Focusable::Editor(
+  //             lyrics_screen.index,
+  //             home::screen::EditorFocusable::LyricsButton
+  //           ),
+  //           Some(tags)
+  //         )
+  //       );
+  //     }
+  //   }
+  // }
   pub fn selected_song_index(&self) -> Option<usize> {
-    match &self.screen {
+    match &self.state.screen {
       ui_enums::Screen::Home(home_screen) => {
         return match home_screen.focused_el {
           home::screen::Focusable::Table(i) => Some(i),
@@ -103,60 +135,30 @@ impl Ui {
       ui_enums::Screen::Lyrics(lyrics_screen) => Some(lyrics_screen.index),
     }
   }
-  fn handle_command(&mut self, cmd: UiCommand, state: &mut State) {
-    match cmd {
-      UiCommand::ChangeScreen(screen) => {
-        self.navigate(screen, state);
-      }
-      UiCommand::OpenModal(modal) => {
-        self.modals.open(modal);
-      }
-      UiCommand::CloseLastModal => {
-        self.modals.close_last();
-      }
-    }
-  }
   pub fn song_tags<'a>(&'a self, state: &'a State) -> Option<&'a SongTags> {
     self.selected_song_index().map(|i| &state.searched_mp3_files[i].tags)
   }
-  pub fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) {
-    match (key_event.code, key_event.modifiers) {
-      (code, modifiers) => {
-        if let Some(modal) = self.modals.last() {
-          for cmd in modal.handle_key_event(key_event, state) {
-            self.handle_command(cmd, state);
-          }
-          return;
-        }
-        match &mut self.screen {
-          ui_enums::Screen::Home(screen) => {
-            for cmd in screen.handle_key_event(key_event, state) {
-              self.handle_command(cmd, state);
-            }
-          }
-          ui_enums::Screen::Lyrics(screen) => {
-            for cmd in screen.handle_key_event(key_event, state) {
-              self.handle_command(cmd, state);
-            }
-          }
-        };
-      }
-    }
-  }
 }
 
-pub trait Screen {
-  fn draw(&mut self, frame: &mut Frame, state: &State);
-  fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand>;
-}
+// pub trait Screen {
+//   fn draw(&mut self, frame: &mut Frame, state: &State);
+//   fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut State) -> Vec<UiCommand>;
+// }
 
-bitflags! {
-  #[derive(PartialEq, Clone, Copy)]
-  pub struct WidgetState: u8 {
-    const Enabled = 1;
-    const Highlighted = 1 << 1;
-    const Valid = 1 << 2;
-  }
+// bitflags! {
+//   #[derive(PartialEq, Clone, Copy)]
+//   pub struct WidgetFlags: u8 {
+//     const Enabled = 1;
+//     const Highlighted = 1 << 1;
+//     const Valid = 1 << 2;
+//   }
+// }
+
+#[derive(Copy, Clone)]
+pub struct StyleFlags {
+  pub enabled: bool,
+  pub highlighted: bool,
+  pub valid: bool,
 }
 
 pub trait StringTrait {
@@ -172,13 +174,13 @@ impl StringTrait for String {
   }
 }
 
-impl From<WidgetState> for Style {
-  fn from(state: WidgetState) -> Self {
-    if state.is_empty() || !state.contains(WidgetState::Enabled) {
+impl From<StyleFlags> for Style {
+  fn from(f: StyleFlags) -> Self {
+    if !f.enabled {
       Style::new().dark_gray()
-    } else if !state.contains(WidgetState::Valid) {
+    } else if !f.valid {
       Style::new().red()
-    } else if state.contains(WidgetState::Highlighted) {
+    } else if f.highlighted {
       Style::new().yellow()
     } else {
       Style::new()

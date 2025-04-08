@@ -1,4 +1,6 @@
-use crossterm::event::{ KeyCode, KeyEvent };
+use std::sync::mpsc::Sender;
+
+use crossterm::event::{ Event, KeyCode, KeyEvent, KeyEventKind };
 use ratatui::{
   buffer::Buffer,
   layout::{ Constraint, Flex, Layout, Margin, Offset, Rect },
@@ -6,29 +8,68 @@ use ratatui::{
   text::Line,
   widgets::{ Block, BorderType, Borders, Clear, Paragraph, Table, Widget, WidgetRef },
 };
-use crate::{ app::app::State, ui::UiCommand };
+use crate::{ app::{ app::Command, state::State }, ui::{ InputHandler, UiState } };
+
 use super::modal::{ Modal, ModalOption, ModalOptions };
 
-pub struct SaveResultModal {
-  options: ModalOptions,
+pub struct SaveTagsResultModal {
+  res: String,
+  pub options: ModalOptions,
 }
 
-impl SaveResultModal {
-  pub fn new() -> Self {
+impl SaveTagsResultModal {
+  pub fn new(res: Result<(), String>) -> Self {
     Self {
+      res: match res.clone() {
+        Ok(_) => "Saved".into(),
+        Err(err) => "Something went wrong".into(),
+      },
       options: ModalOptions::new([
         ModalOption::new(
-          "Cool",
-          Box::new(|state| { Vec::from([UiCommand::CloseLastModal]) })
+          match res {
+            Ok(_) => "Cool".to_string(),
+            Err(_) => ":(".to_string(),
+          },
+          Command::CloseLastModal
         ),
       ]),
     }
   }
 }
 
-impl Modal for SaveResultModal {}
+impl Modal for SaveTagsResultModal {
+  fn options(&self) -> Option<&ModalOptions> {
+    Some(&self.options)
+  }
+  fn options_mut(&mut self) -> Option<&mut ModalOptions> {
+    Some(&mut self.options)
+  }
+}
 
-impl WidgetRef for SaveResultModal {
+impl InputHandler for SaveTagsResultModal {
+  fn handle_input(
+    &self,
+    state: &State,
+    ui_state: &UiState,
+    event: Event,
+    sender: Sender<Command>
+  ) -> bool {
+    match event {
+      Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+        match key_event.code {
+          KeyCode::Esc | KeyCode::Enter | KeyCode::Backspace => {
+            sender.send(Command::CloseLastModal);
+            true
+          }
+          _ => false,
+        }
+      }
+      _ => false,
+    }
+  }
+}
+
+impl WidgetRef for SaveTagsResultModal {
   fn render_ref(&self, area: Rect, buf: &mut Buffer) {
     let [area] = Layout::vertical([Constraint::Max(7)])
       .flex(Flex::Center)
@@ -46,7 +87,7 @@ impl WidgetRef for SaveResultModal {
 
     Clear.render(area, buf);
     Block::bordered().border_type(BorderType::Rounded).render(area, buf);
-    Paragraph::new(Line::from("Saved").centered()).render(
+    Paragraph::new(Line::from(self.res.clone()).centered()).render(
       content_area.inner(Margin::new(1, 1)),
       buf
     );
