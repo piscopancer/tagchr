@@ -1,7 +1,7 @@
 use std::sync::mpsc::Sender;
 
 use crate::{
-  app::{ app::{ App, Command }, state::State, tag::SongTags },
+  app::{ app::{ App, Command }, state::{ State, Source }, tag::SongTags },
   info::{ PROJECT_DESC, PROJECT_NAME },
   ui::{
     block::BlockTrait,
@@ -361,7 +361,25 @@ impl StateDependentWidget for HomeScreen {
                       ])
                     )
                   ),
-                  Cell::new(f.source.to_string().green().italic()),
+                  //  ...(some path)
+                  // |              | -> 16 - current max length of string in section (may change with different layout. idk how to compute)
+                  //     (some path)  -> 13 
+                  Cell::new(
+                    match f.source {
+                      Source::Custom => {   
+                        (
+                          match (f.path.rfind("/")) {
+                            Some(x) => { ("..".to_string() + &f.path[x-14..x]) }
+                            None => { ("..".to_string() + &f.path[f.path.len()-1-14..f.path.len()-1]) }
+                          }
+                        )
+                        .to_string().green().italic()
+                      },
+                      _ => {
+                        f.source.to_string().blue().italic()
+                      },
+                    }
+                  ),
                   Cell::new(f.modified_date.clone().dark_gray())
                 ]
               )

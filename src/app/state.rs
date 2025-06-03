@@ -6,6 +6,7 @@ use super::{ app::Mp3File, tag::SongTags };
 
 #[derive(Clone, Copy)]
 pub enum Source {
+  Custom,
   Downloads,
   Music,
 }
@@ -13,6 +14,7 @@ pub enum Source {
 impl fmt::Display for Source {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
+      Source::Custom => write!(f, "Custom"),
       Source::Downloads => write!(f, "~/Downloads"),
       Source::Music => write!(f, "~/Music"),
     }
@@ -44,7 +46,7 @@ pub struct State {
   pub running: bool,
   pub search: String,
   files: Vec<Mp3File>,
-  pub directories: Vec<std::path::PathBuf>,
+  pub directories: Vec<(std::path::PathBuf, Source)>,
   pub shown_indexes: Vec<usize>,
 }
 
@@ -79,25 +81,24 @@ impl State {
     ).collect();
 
     for dir in user_dirs {
-      new.directories.push(dir);
+      new.directories.push((dir, Source::Custom));
     }
 
-    // match dirs::download_dir() {
-    //     Some(x) => {new.directories.push(x);}
-    //     None => {}
-    // }
-    // match dirs::audio_dir() {
-    //     Some(x) => {new.directories.push(x);}
-    //     None => {}
-    // }
+    match dirs::download_dir() {
+        Some(x) => {new.directories.push((x,Source::Downloads));}
+        None => {}
+    }
+    match dirs::audio_dir() {
+        Some(x) => {new.directories.push((x,Source::Music));}
+        None => {}
+    }
     
     let dirs = new.directories.clone();
-    for dir in dirs {
+    for (dir,src) in dirs {
       let canon_dir = dir.canonicalize();
       match canon_dir {
         Ok(value) => {  
-          // print!("{:?}", value.to_str());
-          new.scan_mp3_files(value, Source::Downloads)
+          new.scan_mp3_files(value, src)
         }
         Err(e) => {
           println!("Cannot canonicalize path {:?}", dir.to_str());
