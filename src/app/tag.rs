@@ -95,7 +95,7 @@ pub struct SongTags {
 
 impl SongTags {
   pub fn new(song_path: String) -> Self {
-    let tag = Tag::read_from_path(song_path.clone()).unwrap();
+    let tag = Tag::read_from_path(song_path.clone()).expect(&song_path);
     Self {
       song_path,
       title: EditableTag(Editable::new(tag.title().map(|n| n.into()))),
