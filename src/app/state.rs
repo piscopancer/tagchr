@@ -33,17 +33,18 @@ fn read_lines(filename: &str) -> Vec<String> {
         }
       }
       Err(e) => {
-        println!("Error while trying to open user directories file: {}", e);
+        println!("Error while trying to open file {0} : {1}", filename, e);
       }
     }
       
     return result;
 }
 
-const DEFAULT_USER_DIRS_FILE_POSTFIX: &str = "/.tagchr/directories.txt";
+const DEFAULT_USER_DIRS_FILE_POSTFIX: &str = "directories.txt";
 
 pub struct State {
   pub running: bool,
+  pub TAGCHR_HOME_FOLDER: String,
   pub search: String,
   files: Vec<Mp3File>,
   pub directories: Vec<(std::path::PathBuf, Source)>,
@@ -54,20 +55,19 @@ impl State {
   pub fn new() -> Self {
     let mut new = Self {
       running: true,
+      TAGCHR_HOME_FOLDER : match dirs::home_dir() {
+          Some(mut x) => { 
+            (x.to_str().unwrap_or("~").to_owned())
+          },
+          None => {"~".to_string().to_owned()}
+      } + "/.tagchr/",
       search: "".into(),
       files: vec![],
       directories: vec![],
       shown_indexes: vec![],
     };
 
-    let DEFAULT_USER_DIRS_FILE_PREFIX: &str = match dirs::home_dir() {
-        Some(mut x) => { 
-          &(x.to_str().unwrap_or("~").to_owned())
-        },
-        None => {"~"}
-    };
-
-    let DEFAULT_USER_DIRS_FILE = (DEFAULT_USER_DIRS_FILE_PREFIX).to_string() + DEFAULT_USER_DIRS_FILE_POSTFIX;
+    let DEFAULT_USER_DIRS_FILE = new.TAGCHR_HOME_FOLDER.clone() + DEFAULT_USER_DIRS_FILE_POSTFIX;
 
     // println!("{}", DEFAULT_USER_DIRS_FILE);
 
@@ -108,7 +108,7 @@ impl State {
     
     new.search_mp3_files(new.search.clone());
     
-    new
+    return new;
   }
   pub fn get_file(&self, i: usize) -> &Mp3File {
     &self.files[i]
